@@ -1,7 +1,3 @@
-declare global {
-  var self: Worker
-}
-
 console.log("worker started")
 const entryPoint = process.env.entryPoint;
 

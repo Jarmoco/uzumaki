@@ -1,4 +1,4 @@
-import { Application, createWindow, cleanup, requestQuit } from "./bindings"
+import { Application, createWindow } from "./bindings"
 
 export interface WindowAttributes {
   width: number,
@@ -15,11 +15,15 @@ export class Window {
     this._width = width;
     this._height = height;
     this._label = label;
-
     createWindow({width, height, label, title })
   }
 
   close() { }
+
+  setSize(width: number, height: number) {
+    this._width = width;
+    this._height = height;
+  }
 
   get width(): number {
     return this._width;
@@ -36,7 +40,8 @@ export class Window {
 
 
 // todo in future we dont want the user to allow doing this
-export function runApp(entryFilePath: string) {
+export function runApp({ entryFilePath, title = "Usumaki" }: { entryFilePath: string, title?: string }) {
+  process.title = title
   let app = new Application();
 
   process.on("SIGINT", () => { });
@@ -44,12 +49,10 @@ export function runApp(entryFilePath: string) {
 
   console.log(entryFilePath);
 
-
   app.onInit(() => {
-    const worker = new Worker(new URL("./main.ts", import.meta.url), {
+    new Worker(new URL("./main.ts", import.meta.url), {
       env: { ...process.env, entryPoint: entryFilePath }
     })
-    worker.onerror = (e) => console.error("worker error:", e)
   })
 
   app.onWindowEvent(() => {
@@ -59,5 +62,4 @@ export function runApp(entryFilePath: string) {
   app.run()
 
   console.log("Reach here")
-  cleanup();
 }

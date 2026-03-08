@@ -16,7 +16,7 @@ if (!await Bun.file(entryFile).exists()) {
   process.exit(1)
 }
 
-runApp(entryFile)
+runApp({ entryFilePath: entryFile })
 
 // runApp(() => {
 

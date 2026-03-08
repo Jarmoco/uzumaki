@@ -22,6 +22,9 @@ enum UserEvent {
 }
 
 #[napi(object)]
+struct JSWindowId(pub u32);
+
+#[napi(object)]
 pub struct WindowOptions {
     pub label: String,
     pub width: u32,
@@ -32,7 +35,6 @@ pub struct WindowOptions {
 #[napi]
 pub fn create_window(options: WindowOptions) {
     let proxy = LOOP_PROXY.lock();
-
     if let Some(proxy) = &*proxy {
         let _ = proxy.send_event(UserEvent::CreateWindow {
             label: options.label,
@@ -52,16 +54,11 @@ pub fn request_quit() {
 }
 
 #[napi]
-pub fn cleanup() {
-    let mut lock = LOOP_PROXY.lock();
-    lock.take();
-}
-
-#[napi]
 pub struct Application {
     on_init: Option<Function<'static, ()>>,
     on_window_event: Option<Function<'static, ()>>,
     windows: HashMap<WindowId, Arc<Window>>,
+    window_label_to_id: HashMap<String, WindowId>, // for js lookup
 }
 
 #[napi]
@@ -72,7 +69,19 @@ impl Application {
             on_init: None,
             on_window_event: None,
             windows: Default::default(),
+            window_label_to_id: Default::default(),
         }
+    }
+
+    fn insert_window(&mut self, window: Arc<winit::window::Window>, label: String) {
+        assert!(
+            !self.window_label_to_id.contains_key(&label),
+            "Window with label '{}' already exists",
+            label
+        );
+
+        self.window_label_to_id.insert(label, window.id());
+        self.windows.insert(window.id(), window);
     }
 
     #[napi]
@@ -104,6 +113,11 @@ impl Application {
 
         println!("Starting event loop ");
         event_loop.run_app(self).expect("Error running event loop ");
+
+        {
+            let mut lock = LOOP_PROXY.lock();
+            lock.take();
+        }
     }
 }
 
@@ -130,10 +144,14 @@ impl ApplicationHandler<UserEvent> for Application {
                         width, height,
                     )));
 
-                let Ok(window) = event_loop.create_window(attributes) else {
+                println!("Creating window");
+                let Ok(winit_window) = event_loop.create_window(attributes) else {
+                    println!("Failed to create window");
                     return;
                 };
-                let window = Arc::new(window);
+
+                let window = Arc::new(winit_window);
+
                 self.windows.insert(window.id(), window);
             }
             UserEvent::Quit => {

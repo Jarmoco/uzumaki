@@ -8,7 +8,7 @@
   ],
   "private": true,
   "scripts": {
-    "start": "pnpm --filter playground start",
+    "start": "pnpm build:core && pnpm --filter playground start",
     "build:core": "pnpm --filter usumaki build"
   },
   "devDependencies": {
