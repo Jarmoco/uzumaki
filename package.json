@@ -3,11 +3,13 @@
   "module": "index.ts",
   "type": "module",
   "workspaces": [
-    "crates/usumaki_core"
+    "crates/usumaki_core",
+    "packages/*"
   ],
   "private": true,
   "scripts": {
-    "build:core": "bun --filter @usumaki/core build"
+    "start": "pnpm --filter playground start",
+    "build:core": "pnpm --filter usumaki build"
   },
   "devDependencies": {
     "@types/bun": "latest"

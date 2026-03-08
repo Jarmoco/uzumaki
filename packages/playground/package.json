@@ -1,0 +1,17 @@
+{
+  "name": "playground",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "usumaki src/index.tsx"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "dependencies": {
+    "usumaki": "workspace:*"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}

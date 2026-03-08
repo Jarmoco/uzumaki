@@ -1,8 +1,17 @@
 {
-  "name": "@usumaki/core",
-  "package": "@usumaki/core",
+  "name": "usumaki",
+  "package": "usumaki",
+  "bin": {
+    "usumaki": "./js/cli.ts"
+  },
   "devDependencies": {
     "@napi-rs/cli": "^3.5.1"
+  },
+  "exports": {
+    ".": "./js/index.ts",
+    "./react": "./js/react/index.ts",
+    "./jsx-runtime": "./js/react/jsx/runtime.ts",
+    "./jsx-dev-runtime": "./js/react/jsx/runtime.ts"
   },
   "napi": {
     "binaryName": "usumaki"
