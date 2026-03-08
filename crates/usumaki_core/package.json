@@ -1,0 +1,15 @@
+{
+  "name": "@usumaki/core",
+  "package": "@usumaki/core",
+  "devDependencies": {
+    "@napi-rs/cli": "^3.5.1"
+  },
+  "napi": {
+    "binaryName": "usumaki"
+  },
+  "scripts": {
+    "start": "bun js/index.js",
+    "build": "napi build --release --platform -o ./js/bindings",
+    "build:debug": "napi build"
+  }
+}
