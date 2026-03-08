@@ -69,26 +69,41 @@ async function build(entryPoint: string) {
   }
   // create a wrapper js function so that we can run the app
 
-  const normalizedPath = isWindows()
-    ? normalizePathWindows(entryFile)
-    : entryFile;
-
   const code = `
     import { runApp } from 'usumaki';
-    runApp({ entryFilePath: '${normalizedPath}' });
+    runApp({ entryFilePath: './index' });
   `;
 
   await $`mkdir -p dist`;
 
-  await $`echo '${code}' > dist/build.js`;
+  await $`echo '${code}' > dist/launch.js`;
 
-  const workerPath = fileURLToPath(new URL('./main.ts', import.meta.url));
   await Bun.build({
     entrypoints: [
-      path.resolve(process.cwd(), 'dist/build.js'),
-      workerPath,
+      path.resolve(process.cwd(), 'dist/launch.js'),
+      fileURLToPath(new URL('./main.ts', import.meta.url)),
+      entryFile,
       /** main worker */
     ],
-    compile: true,
+    naming: '[name].[ext]',
+    external: ['usumaki'],
+    splitting: true,
+    target: 'bun',
+    outdir: 'dist',
   });
+
+  await Bun.build({
+    entrypoints: ['dist/launch.js', 'dist/main.js', 'dist/index.js'],
+    splitting: true,
+    compile: true,
+    naming: '[name].[ext]',
+    target: 'bun',
+  });
+
+  // await Bun.build({
+  //   entrypoints: ['dist/launch.js', 'dist/main'],
+  //   compile: true,
+  // });
+
+  // await $`rm -rf dist`;
 }

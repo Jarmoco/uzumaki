@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'bun';
 import { Application, createWindow } from './bindings';
 
 export interface WindowAttributes {
@@ -57,11 +58,13 @@ export function runApp({
   process.on('SIGINT', () => {});
   process.on('SIGTERM', () => {});
 
-  console.log(entryFilePath);
-
-  new Worker(new URL('./main.ts', import.meta.url), {
+  const worker = new Worker(fileURLToPath(new URL('./main', import.meta.url)), {
     env: { ...process.env, entryPoint: entryFilePath },
   });
+  worker.onerror = (e) => {
+    console.error(e);
+    process.exit(1);
+  };
 
   app.onInit(() => {});
 
