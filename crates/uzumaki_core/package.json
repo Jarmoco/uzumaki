@@ -5,13 +5,19 @@
     "uzumaki": "./js/cli.ts"
   },
   "devDependencies": {
-    "@napi-rs/cli": "^3.5.1"
+    "@napi-rs/cli": "^3.5.1",
+    "@types/react": "^19.2.14",
+    "@types/react-reconciler": "^0.33.0",
+    "react": "^19.2.4"
+  },
+  "peerDependencies": {
+    "react": "^19.2.4"
   },
   "exports": {
     ".": "./js/index.ts",
     "./react": "./js/react/index.ts",
-    "./jsx-runtime": "./js/react/jsx/runtime.ts",
-    "./jsx-dev-runtime": "./js/react/jsx/runtime.ts"
+    "./react/jsx-runtime": "./js/react/jsx/runtime.ts",
+    "./react/jsx-dev-runtime": "./js/react/jsx/runtime.ts"
   },
   "napi": {
     "binaryName": "uzumaki"
@@ -20,5 +26,8 @@
     "start": "bun js/index.js",
     "build": "napi build --release --platform -o ./js/bindings",
     "build:debug": "napi build"
+  },
+  "dependencies": {
+    "react-reconciler": "^0.33.0"
   }
 }

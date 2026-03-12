@@ -23,6 +23,7 @@ export class Window {
     this._width = width;
     this._height = height;
     this._label = label;
+
     createWindow({ width, height, label, title });
   }
 

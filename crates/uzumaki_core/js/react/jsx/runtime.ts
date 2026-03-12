@@ -1,14 +1,8 @@
+import type { ReactNode } from 'react';
+import { createElement } from 'react';
+
 export namespace JSX {
-  export type Element = [
-    Generator,
-    Element[],
-    string & {},
-    number,
-    boolean,
-    null,
-    undefined,
-    unknown,
-  ][number];
+  export type Element = ReactNode;
 
   export interface ElementClass {}
 
@@ -48,7 +42,7 @@ export function jsx(
   props: Record<string, any>,
   key?: string,
 ): JSX.Element {
-  return { type, props, key } as any;
+  return createElement(type, props, key);
 }
 
 export function jsxs(
@@ -56,7 +50,7 @@ export function jsxs(
   props: Record<string, any>,
   key?: string,
 ): JSX.Element {
-  return { type, props, key } as any;
+  return createElement(type, props, key);
 }
 
 export const jsxDEV = jsx;
