@@ -26,17 +26,39 @@ use crate::style::*;
 static LOOP_PROXY: Mutex<Option<EventLoopProxy<UserEvent>>> = Mutex::new(None);
 static DOM_REGISTRY: LazyLock<Mutex<HashMap<String, Arc<Mutex<Dom>>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
-static DOM_EVENT_CB: Mutex<Option<ThreadsafeFunction<DomEventData>>> = Mutex::new(None);
+static DOM_EVENT_CB: Mutex<Option<ThreadsafeFunction<AppEvent>>> = Mutex::new(None);
 
 #[napi(object)]
 pub struct DomEventData {
-    pub label: String,
+    pub window_label: String,
     pub node_id: String,
     pub event_type: String,
 }
 
 #[napi]
-pub fn listen_app_events(callback: ThreadsafeFunction<DomEventData>) {
+pub enum AppEventKind {
+    DomEvent,
+    HotReload,
+}
+
+/** todo switch to some buffer maybe ? */
+#[napi(object)]
+pub struct AppEvent {
+    pub kind: AppEventKind,
+    pub dom_event: DomEventData,
+}
+
+impl From<DomEventData> for AppEvent {
+    fn from(data: DomEventData) -> Self {
+        Self {
+            kind: AppEventKind::DomEvent,
+            dom_event: data,
+        }
+    }
+}
+
+#[napi]
+pub fn listen_app_events(callback: ThreadsafeFunction<AppEvent>) {
     let mut lock = DOM_EVENT_CB.lock();
     *lock = Some(callback);
 }
@@ -652,17 +674,18 @@ impl ApplicationHandler<UserEvent> for Application {
         }
 
         // Dispatch JS click events via global ThreadsafeFunction
+        // todo send once
         if !js_click_node_ids.is_empty() {
             if let Some(label) = self.window_id_to_label.get(&window_id) {
                 let lock = DOM_EVENT_CB.lock();
                 if let Some(cb) = &*lock {
                     for node_id_str in js_click_node_ids {
                         let _ = cb.call(
-                            Ok(DomEventData {
-                                label: label.clone(),
+                            Ok(AppEvent::from(DomEventData {
+                                window_label: label.clone(),
                                 node_id: node_id_str,
                                 event_type: "click".to_string(),
-                            }),
+                            })),
                             ThreadsafeFunctionCallMode::NonBlocking,
                         );
                     }

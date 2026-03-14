@@ -3,7 +3,7 @@ import { render } from 'uzumaki/react';
 import { App as DashboardApp } from './app';
 import { App as CounterApp } from './counter';
 import { useState } from 'react';
-import { ACCENT_BLUE, ACCENT_ORANGE, BASE_BG, BORDER, PANEL } from './styles';
+import { ACCENT_ORANGE, BASE_BG, BORDER, PANEL } from './styles';
 import { Button } from './button';
 
 const window = new Window('main', {

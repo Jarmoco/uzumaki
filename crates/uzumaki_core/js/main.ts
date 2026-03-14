@@ -1,5 +1,6 @@
 import { dispatchEvent } from './react/reconciler';
 import { listenAppEvents } from './bindings';
+import { AppEventKind } from './bindings';
 
 console.log('worker started');
 const entryPoint = process.env.entryPoint;
@@ -8,13 +9,16 @@ if (!entryPoint) {
   throw new Error('entryPoint not set');
 }
 
-// Register DOM event listener via ThreadsafeFunction so Rust can call us directly
 listenAppEvents((err, event) => {
   if (err) {
     console.error('DOM event error:', err);
     return;
   }
-  dispatchEvent(event.nodeId, event.eventType);
+  if (event.kind === AppEventKind.DomEvent && event.domEvent) {
+    dispatchEvent(event.domEvent.nodeId, event.domEvent.eventType);
+  } else if (event.kind === AppEventKind.HotReload) {
+    console.log('hot reload');
+  }
 });
 
 try {
