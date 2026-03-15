@@ -60,11 +60,13 @@ export async function runApp({
 }) {
   const app = new Application();
 
+  let exiting = false;
   function shutdown() {
+    if (exiting) {
+      process.exit(1); // second signal = force kill
+    }
+    exiting = true;
     requestQuit();
-    setTimeout(() => {
-      process.exit(0);
-    }, 1000);
   }
 
   process.on('SIGINT', shutdown);
@@ -79,10 +81,8 @@ export async function runApp({
     process.exit(1);
   }
 
-  // Main loop: pump winit events, then drain and dispatch JS events.
   while (true) {
     const running = app.pumpAppEvents();
-    if (!running) break;
 
     const events = pollEvents();
     for (const event of events) {
@@ -91,8 +91,11 @@ export async function runApp({
       }
     }
 
+    if (!running) break;
+
     await new Promise((resolve) => setImmediate(resolve));
   }
 
+  app.destroy();
   console.log('Bye');
 }
