@@ -77,6 +77,9 @@ export async function runApp({
   title?: string;
   hot?: boolean;
 }) {
+  process.env.WGPU_POWER_PREF = 'high';
+  // todo config this in rust
+  process.env.WGPU_BACKEND = 'dx12';
   const app = new Application();
 
   let exiting = false;

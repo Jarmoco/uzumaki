@@ -68,6 +68,4 @@ function Playground() {
   );
 }
 
-console.log('rendering...');
 render(window, <Playground />);
-console.log('rendered');
