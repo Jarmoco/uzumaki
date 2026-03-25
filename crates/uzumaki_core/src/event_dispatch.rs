@@ -89,7 +89,7 @@ pub fn handle_redraw(
                 let input_padding = if padding > 0.0 { padding } else { 8.0 };
                 let pt = node.style.padding.top;
                 let top_pad = if pt > 0.0 { pt } else { 4.0 };
-                let cursor_pos = is.model.selection.active;
+                let cursor_pos = is.selection.active;
                 let taffy_node = node.taffy_node;
                 (
                     display_text,
@@ -265,7 +265,7 @@ pub fn handle_cursor_moved(
 
                 if let Some(node) = dom.nodes.get_mut(drag_nid) {
                     if let Some(is) = node.behavior.as_input_mut() {
-                        is.model.selection.active = grapheme_idx;
+                        is.selection.active = grapheme_idx;
                         is.reset_blink();
                     }
                 }
@@ -502,10 +502,10 @@ pub fn handle_mouse_input(
                             if let Some(is) = node.behavior.as_input_mut() {
                                 if is_double_click {
                                     let (ws, we) = is.word_at(grapheme_idx);
-                                    is.model.selection.anchor = ws;
-                                    is.model.selection.active = we;
+                                    is.selection.anchor = ws;
+                                    is.selection.active = we;
                                 } else {
-                                    is.model.selection.set_cursor(grapheme_idx);
+                                    is.selection.set_cursor(grapheme_idx);
                                 }
                                 is.reset_blink();
                             }
@@ -614,12 +614,12 @@ pub fn handle_keyboard_input(
 
                 if let Some(node) = dom.nodes.get_mut(focused_id) {
                     if let Some(is) = node.behavior.as_input_mut() {
-                        let (_, cur_col) = is.model.cursor_rowcol();
+                        let (_, cur_col) = is.cursor_rowcol();
                         let sticky = is.sticky_col.unwrap_or(cur_col);
                         if is_up {
-                            is.model.move_up(extend, Some(sticky));
+                            is.move_up(extend, Some(sticky));
                         } else {
-                            is.model.move_down(extend, Some(sticky));
+                            is.move_down(extend, Some(sticky));
                         }
                         is.sticky_col = Some(sticky);
                         is.sticky_x = None;
