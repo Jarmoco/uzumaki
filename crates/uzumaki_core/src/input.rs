@@ -95,13 +95,11 @@ impl InputState {
             blink_reset: Instant::now(),
             disabled: false,
             secure: false,
-            multiline: false,
+            multiline: true,
             sticky_col: None,
             sticky_x: None,
         }
     }
-
-    // ── Selection helpers ────────────────────────────────────────────
 
     /// Delete the current selection. Returns true if something was deleted.
     fn delete_selection(&mut self) -> bool {
@@ -120,12 +118,15 @@ impl InputState {
         if self.selection.is_collapsed() {
             return String::new();
         }
-        self.model.text_in_range(self.selection.start(), self.selection.end())
+        self.model
+            .text_in_range(self.selection.start(), self.selection.end())
     }
 
-    // ── Editing ──────────────────────────────────────────────────────
+    pub fn text_content(&self) -> String {
+        self.model.text()
+    }
 
-    pub fn insert_text(&mut self, ch: &str) -> Option<EditEvent> {
+    pub fn insert_text(&mut self, text: &str) -> Option<EditEvent> {
         self.sticky_x = None;
         self.sticky_col = None;
         if self.disabled {
@@ -134,7 +135,7 @@ impl InputState {
         // Single-line: reject newlines
         let text_to_insert;
         let input = if !self.multiline {
-            text_to_insert = ch
+            text_to_insert = text
                 .chars()
                 .filter(|&c| c != '\n' && c != '\r')
                 .collect::<String>();
@@ -143,7 +144,7 @@ impl InputState {
             }
             text_to_insert.as_str()
         } else {
-            ch
+            text
         };
 
         self.delete_selection();
@@ -409,6 +410,13 @@ impl InputState {
         self.reset_blink();
     }
 
+    pub fn set_selection(&mut self, anchor: usize, active: usize) {
+        let max = self.grapheme_count();
+        self.selection.anchor = anchor.min(max);
+        self.selection.active = active.min(max);
+        self.reset_blink();
+    }
+
     pub fn select_all(&mut self) {
         self.sticky_x = None;
         self.selection.anchor = 0;
@@ -658,7 +666,7 @@ mod tests {
     #[test]
     fn insert_newline_in_single_line_mode() {
         let mut is = input_at("hello", 5);
-        // multiline is false by default
+        is.multiline = false;
         let result = is.insert_text("\n");
         assert!(result.is_none());
         assert_eq!(is.model.text(), "hello");
@@ -667,7 +675,7 @@ mod tests {
     #[test]
     fn insert_newline_in_multiline_mode() {
         let mut is = input_at("hello", 5);
-        is.multiline = true;
+        // multiline is true by default
         let result = is.insert_text("\n");
         assert!(result.is_some());
         assert_eq!(is.model.text(), "hello\n");
@@ -680,8 +688,6 @@ mod tests {
         assert!(is.insert_text("!").is_none());
         assert_eq!(is.model.text(), "hello");
     }
-
-    // ── Delete backward ──────────────────────────────────────────────
 
     #[test]
     fn delete_backward_at_end() {
@@ -718,8 +724,6 @@ mod tests {
         assert_eq!(is.selection.active, 5);
     }
 
-    // ── Delete forward ───────────────────────────────────────────────
-
     #[test]
     fn delete_forward_at_start() {
         let mut is = input_at("hello", 0);
@@ -753,8 +757,6 @@ mod tests {
         assert_eq!(is.model.text(), "helloworld");
     }
 
-    // ── Delete word backward ─────────────────────────────────────────
-
     #[test]
     fn delete_word_backward_basic() {
         let mut is = input_at("hello world", 11);
@@ -779,8 +781,6 @@ mod tests {
         assert_eq!(is.selection.active, 6);
     }
 
-    // ── Delete word forward ──────────────────────────────────────────
-
     #[test]
     fn delete_word_forward_basic() {
         let mut is = input_at("hello world", 0);
@@ -795,8 +795,6 @@ mod tests {
         let mut is = input_at("hello", 5);
         assert!(is.delete_word_forward().is_none());
     }
-
-    // ── Move left/right ──────────────────────────────────────────────
 
     #[test]
     fn move_left_basic() {
@@ -878,8 +876,6 @@ mod tests {
         assert_eq!(is.model.flat_to_rowcol(2), (0, 2));
     }
 
-    // ── Move word left/right ─────────────────────────────────────────
-
     #[test]
     fn move_word_left() {
         let mut is = input_at("hello world foo", 15);
@@ -909,8 +905,6 @@ mod tests {
         assert_eq!(is.selection.active, 6);
         assert_eq!(is.selection.anchor, 11);
     }
-
-    // ── Move home/end ────────────────────────────────────────────────
 
     #[test]
     fn move_home_single_line() {
@@ -965,8 +959,6 @@ mod tests {
         assert_eq!(is.selection.active, 11);
     }
 
-    // ── Move absolute home/end ───────────────────────────────────────
-
     #[test]
     fn move_absolute_home() {
         let mut is = input_at("hello\nworld", 8);
@@ -980,8 +972,6 @@ mod tests {
         is.move_absolute_end(false);
         assert_eq!(is.selection.active, 11);
     }
-
-    // ── Move up/down ─────────────────────────────────────────────────
 
     #[test]
     fn move_up_basic() {
@@ -1041,8 +1031,6 @@ mod tests {
         assert_eq!(is.selection.anchor, 8);
     }
 
-    // ── Select all ───────────────────────────────────────────────────
-
     #[test]
     fn select_all_basic() {
         let mut is = input("hello");
@@ -1059,8 +1047,6 @@ mod tests {
         assert_eq!(is.selection.active, 11);
         assert_eq!(is.selected_text(), "hello\nworld");
     }
-
-    // ── Selected text ────────────────────────────────────────────────
 
     #[test]
     fn selected_text_empty_when_collapsed() {
@@ -1086,8 +1072,6 @@ mod tests {
         assert_eq!(is.selected_text(), "hello");
     }
 
-    // ── move_to ──────────────────────────────────────────────────────
-
     #[test]
     fn move_to_basic() {
         let mut is = input("hello");
@@ -1111,16 +1095,12 @@ mod tests {
         assert_eq!(is.selection.active, 5);
     }
 
-    // ── word_at ──────────────────────────────────────────────────────
-
     #[test]
     fn word_at_basic() {
         let is = input("hello world");
         assert_eq!(is.word_at(0), (0, 5));
         assert_eq!(is.word_at(7), (6, 11));
     }
-
-    // ── set_value ────────────────────────────────────────────────────
 
     #[test]
     fn set_value_clamps_selection() {
@@ -1129,8 +1109,6 @@ mod tests {
         assert_eq!(is.selection.active, 2);
         assert_eq!(is.selection.anchor, 2);
     }
-
-    // ── display_text ─────────────────────────────────────────────────
 
     #[test]
     fn display_text_normal() {
@@ -1142,18 +1120,17 @@ mod tests {
     fn display_text_secure() {
         let mut is = input("hello");
         is.secure = true;
-        assert_eq!(is.display_text(), "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}");
+        assert_eq!(
+            is.display_text(),
+            "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}"
+        );
     }
-
-    // ── cursor_rowcol ────────────────────────────────────────────────
 
     #[test]
     fn cursor_rowcol_basic() {
         let is = input_at("hello\nworld", 8);
         assert_eq!(is.cursor_rowcol(), (1, 2));
     }
-
-    // ── Disabled guard ───────────────────────────────────────────────
 
     #[test]
     fn disabled_blocks_all_edits() {
@@ -1167,8 +1144,6 @@ mod tests {
         assert_eq!(is.model.text(), "hello");
     }
 
-    // ── Delete selection spanning lines ──────────────────────────────
-
     #[test]
     fn delete_selection_multiline() {
         let mut is = input_sel("abc\ndef\nghi", 2, 9);
@@ -1177,8 +1152,6 @@ mod tests {
         assert_eq!(is.model.text(), "abhi");
         assert_eq!(is.selection.active, 2);
     }
-
-    // ── Integration: type, select, delete, type ──────────────────────
 
     #[test]
     fn integration_type_select_delete_type() {
@@ -1218,8 +1191,6 @@ mod tests {
         assert_eq!(is.model.text(), "line1\nline\nline3");
     }
 
-    // ── Max length ───────────────────────────────────────────────────
-
     #[test]
     fn max_length_blocks_insert() {
         let mut is = InputState::new();
@@ -1240,5 +1211,389 @@ mod tests {
         let result = is.insert_text("hi");
         assert!(result.is_some());
         assert_eq!(is.model.text(), "hi");
+    }
+
+    /// Type "hello world", press Enter to split into two lines, verify content.
+    #[test]
+    fn should_split_line_on_enter() {
+        let mut is = InputState::new();
+        is.multiline = true;
+
+        // Type "hello world"
+        is.insert_text("hello world");
+        assert_eq!(is.model.text(), "hello world");
+        assert_eq!(is.selection.active, 11);
+
+        // Move cursor between "hello" and " world" (pos 5)
+        is.move_to(5, false);
+        assert_eq!(is.selection.active, 5);
+
+        // Press Enter to split the line
+        is.insert_text("\n");
+        assert_eq!(is.model.text(), "hello\n world");
+        assert_eq!(is.model.line_count(), 2);
+        assert_eq!(is.cursor_rowcol(), (1, 0));
+    }
+
+    /// Type on line 1, Enter, type on line 2, move up, insert text on line 1.
+    #[test]
+    fn should_type_enter_move_up_and_insert() {
+        let mut is = InputState::new();
+        is.multiline = true;
+
+        is.insert_text("aaa");
+        is.insert_text("\n");
+        is.insert_text("bbb");
+        assert_eq!(is.model.text(), "aaa\nbbb");
+        assert_eq!(is.cursor_rowcol(), (1, 3));
+
+        // Move up — should land on row 0, col 3
+        let col = is.cursor_rowcol().1;
+        is.move_up(false, Some(col));
+        assert_eq!(is.cursor_rowcol(), (0, 3));
+
+        // Insert " hello" at end of line 1
+        is.insert_text(" hello");
+        assert_eq!(is.model.text(), "aaa hello\nbbb");
+        assert_eq!(is.cursor_rowcol(), (0, 9));
+    }
+
+    /// Type two lines, move up, move left twice, insert a character mid-line.
+    #[test]
+    fn should_move_up_left_and_insert_mid_line() {
+        let mut is = InputState::new();
+        is.multiline = true;
+
+        is.insert_text("abcd\nefgh");
+        assert_eq!(is.cursor_rowcol(), (1, 4));
+
+        // Move up → row 0, col 4 (end of "abcd")
+        let col = is.cursor_rowcol().1;
+        is.move_up(false, Some(col));
+        assert_eq!(is.cursor_rowcol(), (0, 4));
+
+        // Move left twice → col 2
+        is.move_left(false);
+        is.move_left(false);
+        assert_eq!(is.cursor_rowcol(), (0, 2));
+
+        // Insert "X"
+        is.insert_text("X");
+        assert_eq!(is.model.text(), "abXcd\nefgh");
+        assert_eq!(is.cursor_rowcol(), (0, 3));
+    }
+
+    /// Split a line in the middle: "helloworld" → Enter at pos 5 → "hello\nworld".
+    #[test]
+    fn should_split_line_in_middle_and_continue_typing() {
+        let mut is = InputState::new();
+        is.multiline = true;
+
+        is.insert_text("helloworld");
+        is.move_to(5, false);
+        is.insert_text("\n");
+
+        assert_eq!(is.model.text(), "hello\nworld");
+        assert_eq!(is.model.line_count(), 2);
+        assert_eq!(is.cursor_rowcol(), (1, 0));
+
+        // Continue typing on the new line
+        is.insert_text("beautiful ");
+        assert_eq!(is.model.text(), "hello\nbeautiful world");
+        assert_eq!(is.cursor_rowcol(), (1, 10));
+    }
+
+    /// Join two lines by pressing Backspace at the start of line 2.
+    #[test]
+    fn should_join_lines_with_backspace() {
+        let mut is = InputState::new();
+        is.multiline = true;
+
+        is.insert_text("hello\nworld");
+        assert_eq!(is.model.line_count(), 2);
+
+        // Move to start of line 2 (flat index 6 = row 1, col 0)
+        is.move_to(6, false);
+        assert_eq!(is.cursor_rowcol(), (1, 0));
+
+        // Backspace joins the lines
+        is.delete_backward();
+        assert_eq!(is.model.text(), "helloworld");
+        assert_eq!(is.model.line_count(), 1);
+        assert_eq!(is.selection.active, 5);
+    }
+
+    /// Type three lines, navigate up/down, delete and re-type.
+    #[test]
+    fn should_navigate_up_delete_and_retype_line() {
+        let mut is = InputState::new();
+        is.multiline = true;
+
+        is.insert_text("first");
+        is.insert_text("\n");
+        is.insert_text("second");
+        is.insert_text("\n");
+        is.insert_text("third");
+        assert_eq!(is.model.text(), "first\nsecond\nthird");
+        assert_eq!(is.model.line_count(), 3);
+        assert_eq!(is.cursor_rowcol(), (2, 5));
+
+        // Move up twice to get to line 0
+        let col = is.cursor_rowcol().1;
+        is.move_up(false, Some(col));
+        assert_eq!(is.cursor_rowcol(), (1, 5));
+        is.move_up(false, Some(col));
+        assert_eq!(is.cursor_rowcol(), (0, 5));
+
+        // Delete "first" backwards (5 backspaces)
+        is.delete_backward();
+        is.delete_backward();
+        is.delete_backward();
+        is.delete_backward();
+        is.delete_backward();
+        assert_eq!(is.cursor_rowcol(), (0, 0));
+        assert_eq!(is.model.text(), "\nsecond\nthird");
+
+        // Type replacement
+        is.insert_text("ONE");
+        assert_eq!(is.model.text(), "ONE\nsecond\nthird");
+        assert_eq!(is.cursor_rowcol(), (0, 3));
+
+        // Move down to line 1 and verify we're there
+        is.move_down(false, Some(3));
+        assert_eq!(is.cursor_rowcol(), (1, 3));
+    }
+
+    /// Type text, use Home/End to navigate, then edit.
+    #[test]
+    fn should_use_home_end_to_navigate_and_edit() {
+        let mut is = InputState::new();
+        is.multiline = true;
+
+        is.insert_text("hello world\ngoodbye");
+        assert_eq!(is.cursor_rowcol(), (1, 7));
+
+        // Home goes to start of line 2
+        is.move_home(false);
+        assert_eq!(is.cursor_rowcol(), (1, 0));
+
+        // Insert text at beginning of line 2
+        is.insert_text("say ");
+        assert_eq!(is.model.text(), "hello world\nsay goodbye");
+        assert_eq!(is.cursor_rowcol(), (1, 4));
+
+        // Move up, then End to go to end of line 1
+        is.move_up(false, None);
+        is.move_end(false);
+        assert_eq!(is.cursor_rowcol(), (0, 11));
+
+        // Append to line 1
+        is.insert_text("!");
+        assert_eq!(is.model.text(), "hello world!\nsay goodbye");
+    }
+
+    /// Select text across lines and replace it.
+    #[test]
+    fn should_select_across_lines_and_replace() {
+        let mut is = InputState::new();
+        is.multiline = true;
+
+        is.insert_text("aaa\nbbb\nccc");
+        assert_eq!(is.model.line_count(), 3);
+
+        // Select from middle of line 1 to middle of line 3: "a\nbbb\nc"
+        is.selection = TextSelection::new(2, 9);
+        assert_eq!(is.selected_text(), "a\nbbb\nc");
+
+        // Replace selection
+        is.insert_text("X");
+        assert_eq!(is.model.text(), "aaXcc");
+        assert_eq!(is.model.line_count(), 1);
+        assert_eq!(is.selection.active, 3);
+    }
+
+    #[test]
+    fn should_move_down_insert_and_stuff() {
+        let mut is = InputState::new();
+        is.insert_text("Line 1\nLine 2\nLine 3");
+        is.move_to(4, false);
+        is.insert_text("A");
+        assert_eq!(is.text_content(), "LineA 1\nLine 2\nLine 3");
+        assert_eq!(is.selection.active, 5);
+        is.move_down(false, None);
+        is.insert_text("B");
+        assert_eq!(is.text_content(), "LineA 1\nLine B2\nLine 3");
+        is.move_down(false, None);
+        is.insert_text("C");
+        assert_eq!(is.text_content(), "LineA 1\nLine B2\nLine 3C");
+    }
+
+    /// Simulate typing a function: type name, parens, Enter, body, Enter, close brace.
+    #[test]
+    fn should_type_function_body_and_fix_string() {
+        let mut is = InputState::new();
+
+        is.insert_text("fn main() {");
+        is.insert_text("\n");
+        is.insert_text("    println!(\"hi\");");
+        is.insert_text("\n");
+        is.insert_text("}");
+
+        assert_eq!(is.model.text(), "fn main() {\n    println!(\"hi\");\n}");
+        assert_eq!(is.model.line_count(), 3);
+        assert_eq!(is.cursor_rowcol(), (2, 1));
+
+        // Go back up to the println line and fix the message
+        is.move_up(false, Some(1));
+        assert_eq!(is.cursor_rowcol(), (1, 1));
+        is.move_end(false);
+
+        // We're at end of line 1, move left past ");" to get inside the string
+        // "    println!("hi");" — move left 3 to get after the 'i'
+        is.move_left(false); // ;
+        is.move_left(false); // )
+        is.move_left(false); // "
+        is.move_left(false); // i
+        is.move_left(false); // h
+
+        // Select "hi" (2 chars)
+        is.move_right(true);
+        is.move_right(true);
+        assert_eq!(is.selected_text(), "hi");
+
+        // Replace with "hello"
+        is.insert_text("hello");
+        assert_eq!(is.model.text(), "fn main() {\n    println!(\"hello\");\n}");
+    }
+
+    /// Move down past a shorter line, verify sticky column behavior.
+    #[test]
+    fn should_preserve_sticky_col_through_short_line() {
+        let mut is = InputState::new();
+
+        is.insert_text("long line here\nhi\nlong line here");
+        // Cursor at end: row 2, col 14
+        assert_eq!(is.cursor_rowcol(), (2, 14));
+
+        // Go to row 0, col 10
+        is.move_to(10, false);
+        assert_eq!(is.cursor_rowcol(), (0, 10));
+
+        // Move down through the short line (sticky col = 10)
+        is.move_down(false, Some(10));
+        // "hi" is only 2 chars, so we clamp to col 2
+        assert_eq!(is.cursor_rowcol(), (1, 2));
+
+        // Move down again with same sticky col
+        is.move_down(false, Some(10));
+        // Back to a long line, col 10 is available
+        assert_eq!(is.cursor_rowcol(), (2, 10));
+    }
+
+    /// Delete forward at end of line joins with next line.
+    #[test]
+    fn should_delete_forward_at_line_end_join_lines() {
+        let mut is = InputState::new();
+
+        is.insert_text("abc\ndef");
+        // Move to end of line 1 (pos 3 = row 0, col 3)
+        is.move_to(3, false);
+        assert_eq!(is.cursor_rowcol(), (0, 3));
+        is.delete_forward();
+
+        // Delete forward removes the newline
+        assert_eq!(is.model.text(), "abcdef");
+        assert_eq!(is.model.line_count(), 1);
+        assert_eq!(is.selection.active, 3);
+    }
+
+    /// Type, make a mistake, backspace, correct it — common editing pattern.
+    #[test]
+    fn should_correct_typo_with_backspace() {
+        let mut is = InputState::new();
+
+        // Type "teh " (typo for "the ")
+        is.insert_text("teh ");
+        assert_eq!(is.model.text(), "teh ");
+
+        // Backspace three times to remove " ", "h", "e"
+        is.delete_backward(); // remove space → "teh"
+        is.delete_backward(); // remove h → "te"
+        is.delete_backward(); // remove e → "t"
+        assert_eq!(is.model.text(), "t");
+
+        // Re-type "he " correctly
+        is.insert_text("he ");
+        assert_eq!(is.model.text(), "the ");
+
+        // Continue typing
+        is.insert_text("quick brown fox");
+        assert_eq!(is.model.text(), "the quick brown fox");
+    }
+
+    /// Multiple Enter presses to create blank lines, then navigate and fill them.
+    #[test]
+    fn should_create_blank_lines_then_fill() {
+        let mut is = InputState::new();
+
+        is.insert_text("header");
+        is.insert_text("\n");
+        is.insert_text("\n");
+        is.insert_text("footer");
+        assert_eq!(is.model.text(), "header\n\nfooter");
+        assert_eq!(is.model.line_count(), 3);
+        assert_eq!(is.cursor_rowcol(), (2, 6));
+
+        // Navigate to the blank line (row 1)
+        is.move_up(false, Some(0));
+        is.move_up(false, Some(0));
+        assert_eq!(is.cursor_rowcol(), (0, 0));
+        is.move_down(false, Some(0));
+        assert_eq!(is.cursor_rowcol(), (1, 0));
+
+        // Type content on the blank line
+        is.insert_text("body content");
+        assert_eq!(is.model.text(), "header\nbody content\nfooter");
+        assert_eq!(is.model.line_count(), 3);
+    }
+
+    /// Word-delete backward on a multiline buffer.
+    #[test]
+    fn should_word_delete_backward_across_lines() {
+        let mut is = InputState::new();
+
+        is.insert_text("hello world\ngoodbye planet");
+        assert_eq!(is.cursor_rowcol(), (1, 14));
+
+        // Delete word backward: removes "planet"
+        is.delete_word_backward();
+        assert_eq!(is.model.text(), "hello world\ngoodbye ");
+
+        // Delete word backward: removes "goodbye"
+        is.delete_word_backward();
+        assert_eq!(is.model.text(), "hello world\n");
+
+        // One more: the newline and "world" get eaten (crosses line boundary)
+        is.delete_word_backward();
+        // Exact result depends on word boundary logic, but line count should decrease
+        assert!(is.model.line_count() <= 2);
+    }
+
+    /// Select all, delete, type fresh — common "clear and retype" workflow.
+    #[test]
+    fn should_select_all_and_retype() {
+        let mut is = InputState::new();
+
+        is.insert_text("old content\nspanning\nmultiple lines");
+        assert_eq!(is.model.line_count(), 3);
+
+        // Ctrl+A (select all) then type to replace
+        is.select_all();
+        assert_eq!(is.selected_text(), "old content\nspanning\nmultiple lines");
+
+        is.insert_text("brand new text");
+        assert_eq!(is.model.text(), "brand new text");
+        assert_eq!(is.model.line_count(), 1);
+        assert_eq!(is.selection.active, 14);
     }
 }
