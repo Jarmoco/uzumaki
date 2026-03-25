@@ -228,6 +228,7 @@ pub fn handle_cursor_moved(
                 })
             });
 
+            // TODO  oh my gaaah TT please refactor this
             if let Some((
                 display_text,
                 font_size,
@@ -392,6 +393,7 @@ pub fn handle_mouse_input(
                 if clicked_is_input {
                     let nid = js_target.unwrap();
 
+                    // TODO thriple click
                     // Double-click detection
                     let now = std::time::Instant::now();
                     let is_double_click = dom.last_click_node == Some(nid)

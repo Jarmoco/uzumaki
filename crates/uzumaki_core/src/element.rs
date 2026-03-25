@@ -154,6 +154,7 @@ pub struct Dom {
     pub hit_state: HitTestState,
     /// Currently focused input node.
     pub focused_node: Option<NodeId>,
+    // oh god please move this to input state
     /// Input node being dragged for selection.
     pub dragging_input: Option<NodeId>,
     /// Last click time (for double-click detection).

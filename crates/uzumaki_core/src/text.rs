@@ -227,14 +227,16 @@ impl TextRenderer {
                 last_line_top = line_top;
             }
 
+            // cosmic-text glyph byte offsets are relative to the line (paragraph),
+            // not the full text. Convert to absolute text byte offsets.
+            let line_byte_offset = line_starts.get(run.line_i).copied().unwrap_or(0);
+
             if run.glyphs.is_empty() {
-                let line_idx = run.line_i;
-                let byte_off = line_starts.get(line_idx).copied().unwrap_or(text.len());
-                byte_pos.push((byte_off, 0.0, line_top));
+                byte_pos.push((line_byte_offset, 0.0, line_top));
             } else {
                 for glyph in run.glyphs.iter() {
-                    byte_pos.push((glyph.start, glyph.x, line_top));
-                    byte_pos.push((glyph.end, glyph.x + glyph.w, line_top));
+                    byte_pos.push((line_byte_offset + glyph.start, glyph.x, line_top));
+                    byte_pos.push((line_byte_offset + glyph.end, glyph.x + glyph.w, line_top));
                 }
             }
         }
@@ -265,24 +267,18 @@ impl TextRenderer {
                 .then(a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal))
         });
 
-        // Build a set of byte offsets immediately after a \n character.
-        // At these offsets we want the next-line position (higher y).
-        // At soft-wrap boundaries we want the current-line position (lower y).
-        let newline_bytes: std::collections::HashSet<usize> = text
-            .char_indices()
-            .filter(|&(_, ch)| ch == '\n')
-            .map(|(i, ch)| i + ch.len_utf8())
-            .collect();
-
-        // Map grapheme boundaries to (x, y), normalizing y to zero-based
+        // Map grapheme boundaries to (x, y), normalizing y to zero-based.
+        // Always prefer next line at line breaks: at hard newlines (\n) this
+        // picks the start of the next line; at soft-wrap boundaries this picks
+        // (x=0, next_visual_line_y) instead of (end_x, current_line_y).
+        // At non-break positions there is only one entry so the flag is a no-op.
         let mut positions = Vec::new();
         positions.push(GlyphPos2D { x: 0.0, y: 0.0 });
 
         let mut byte_offset = 0;
         for grapheme in text.graphemes(true) {
             byte_offset += grapheme.len();
-            let after_newline = newline_bytes.contains(&byte_offset);
-            let mut pos = lookup_byte_pos_2d(&byte_pos, byte_offset, after_newline);
+            let mut pos = lookup_byte_pos_2d(&byte_pos, byte_offset, true);
             pos.y -= first_y;
             positions.push(pos);
         }
@@ -424,6 +420,7 @@ fn lookup_byte_pos_2d(
     }
 }
 
+
 fn lookup_byte_x(byte_x: &[(usize, f32)], byte_offset: usize) -> f32 {
     match byte_x.binary_search_by_key(&byte_offset, |&(off, _)| off) {
         Ok(idx) => byte_x[idx].1,
@@ -438,6 +435,308 @@ fn lookup_byte_x(byte_x: &[(usize, f32)], byte_offset: usize) -> f32 {
                 let t = (byte_offset - off0) as f32 / (off1 - off0).max(1) as f32;
                 x0 + t * (x1 - x0)
             }
+        }
+    }
+}
+
+// ── Tests ────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn renderer() -> TextRenderer {
+        TextRenderer::new()
+    }
+
+    // ── lookup_byte_pos_2d (pure function) ──────────────────────────
+
+    #[test]
+    fn lookup_single_entry() {
+        let byte_pos = vec![(0, 0.0f32, 0.0f32), (5, 50.0, 0.0)];
+        let pos = lookup_byte_pos_2d(&byte_pos, 0, true);
+        assert!((pos.x - 0.0).abs() < 0.01);
+        assert!((pos.y - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn lookup_prefers_next_line_at_wrap() {
+        // Simulates a soft-wrap boundary at byte 3:
+        // end-of-line-0 at (3, 30.0, 0.0) and start-of-line-1 at (3, 0.0, 20.0)
+        let byte_pos = vec![
+            (0, 0.0f32, 0.0f32),
+            (3, 30.0, 0.0),
+            (3, 0.0, 20.0),
+            (6, 30.0, 20.0),
+        ];
+
+        let next = lookup_byte_pos_2d(&byte_pos, 3, true);
+        assert!((next.x - 0.0).abs() < 0.01, "prefer_next_line should pick x=0");
+        assert!((next.y - 20.0).abs() < 0.01, "prefer_next_line should pick y=20");
+
+        let curr = lookup_byte_pos_2d(&byte_pos, 3, false);
+        assert!((curr.x - 30.0).abs() < 0.01, "prefer_current should pick x=30");
+        assert!((curr.y - 0.0).abs() < 0.01, "prefer_current should pick y=0");
+    }
+
+    #[test]
+    fn lookup_interpolates_between_neighbors() {
+        // Byte offsets 0 and 4 at x=0 and x=40 on same line
+        let byte_pos = vec![(0, 0.0f32, 0.0f32), (4, 40.0, 0.0)];
+        let pos = lookup_byte_pos_2d(&byte_pos, 2, false);
+        assert!((pos.x - 20.0).abs() < 0.01, "should interpolate to x=20");
+        assert!((pos.y - 0.0).abs() < 0.01);
+    }
+
+    // ── grapheme_positions_2d ───────────────────────────────────────
+
+    #[test]
+    fn positions_2d_single_line_count() {
+        let mut r = renderer();
+        let pos = r.grapheme_positions_2d("abc", 16.0, None);
+        assert_eq!(pos.len(), 4, "3 graphemes + 1 boundary = 4 entries");
+    }
+
+    #[test]
+    fn positions_2d_single_line_all_on_line_zero() {
+        let mut r = renderer();
+        let pos = r.grapheme_positions_2d("hello", 16.0, None);
+        for p in &pos {
+            assert!(
+                p.y.abs() < 1.0,
+                "all positions should have y≈0 on a single line, got y={}",
+                p.y
+            );
+        }
+    }
+
+    #[test]
+    fn positions_2d_x_monotonically_increases() {
+        let mut r = renderer();
+        let pos = r.grapheme_positions_2d("abcdef", 16.0, None);
+        for w in pos.windows(2) {
+            assert!(
+                w[1].x >= w[0].x - 0.01,
+                "x should increase: {} >= {}",
+                w[1].x,
+                w[0].x
+            );
+        }
+    }
+
+    #[test]
+    fn positions_2d_hard_newline_two_lines() {
+        let mut r = renderer();
+        let pos = r.grapheme_positions_2d("ab\ncd", 16.0, None);
+        // 5 graphemes (a, b, \n, c, d) + 1 = 6
+        assert_eq!(pos.len(), 6);
+
+        // First 3 positions (before-a, after-a, after-b) on line 0
+        assert!(pos[0].y.abs() < 1.0);
+        assert!(pos[1].y.abs() < 1.0);
+        assert!(pos[2].y.abs() < 1.0);
+
+        // After \n → start of line 1
+        let line1_y = pos[3].y;
+        assert!(line1_y > 1.0, "line 1 y should be > 0, got {}", line1_y);
+        assert!(
+            pos[3].x < 1.0,
+            "start of line 1 should be at x≈0, got {}",
+            pos[3].x
+        );
+
+        // Remaining on line 1
+        assert!((pos[4].y - line1_y).abs() < 1.0);
+        assert!((pos[5].y - line1_y).abs() < 1.0);
+    }
+
+    #[test]
+    fn positions_2d_x_resets_on_new_line() {
+        let mut r = renderer();
+        let pos = r.grapheme_positions_2d("abc\nde", 16.0, None);
+        // After \n = pos[4], should be at x≈0 on line 1
+        assert!(pos[4].x < 1.0, "first char on line 1 should be near x=0");
+        // After first char on line 1, x should increase
+        assert!(
+            pos[5].x > pos[4].x,
+            "x should increase on line 1: {} > {}",
+            pos[5].x,
+            pos[4].x
+        );
+    }
+
+    #[test]
+    fn positions_2d_empty_line_between() {
+        let mut r = renderer();
+        let pos = r.grapheme_positions_2d("a\n\nb", 16.0, None);
+        // Graphemes: a, \n, \n, b → 4 graphemes + 1 = 5 positions
+        assert_eq!(pos.len(), 5);
+
+        // pos[2] = after first \n = start of empty line
+        // pos[3] = after second \n = start of line with "b"
+        assert!(
+            pos[3].y > pos[2].y,
+            "line after empty should be below: {} > {}",
+            pos[3].y,
+            pos[2].y
+        );
+        assert!(pos[3].x < 1.0, "start of last line should be x≈0");
+    }
+
+    #[test]
+    fn positions_2d_trailing_newline() {
+        let mut r = renderer();
+        let pos = r.grapheme_positions_2d("abc\n", 16.0, None);
+        // Graphemes: a, b, c, \n → 4 graphemes + 1 = 5 positions
+        assert_eq!(pos.len(), 5);
+        let last = pos.last().unwrap();
+        assert!(last.x < 1.0, "after trailing \\n should be x≈0, got {}", last.x);
+        assert!(
+            last.y > pos[0].y,
+            "after trailing \\n should be on a new line"
+        );
+    }
+
+    #[test]
+    fn positions_2d_wrapping_creates_multiple_visual_lines() {
+        let mut r = renderer();
+        // Use very narrow width to force wrapping. At font_size 16, each char is ~9px.
+        // "abcdef ghij" with wrap_width=50 should wrap.
+        let pos = r.grapheme_positions_2d("abcdef ghij", 16.0, Some(50.0));
+
+        // Collect unique y values
+        let mut ys: Vec<f32> = vec![pos[0].y];
+        for p in &pos[1..] {
+            if ys.last().map_or(true, |&ly| (p.y - ly).abs() > 1.0) {
+                ys.push(p.y);
+            }
+        }
+        assert!(
+            ys.len() >= 2,
+            "narrow width should produce at least 2 visual lines, got {}",
+            ys.len()
+        );
+    }
+
+    #[test]
+    fn positions_2d_wrap_break_at_start_of_next_line() {
+        let mut r = renderer();
+        // Force a wrap. With very narrow width, even "ab cd" wraps.
+        let pos = r.grapheme_positions_2d("ab cd", 16.0, Some(30.0));
+
+        // Find the first position on a second visual line
+        let line0_y = pos[0].y;
+        let first_on_line1 = pos.iter().find(|p| (p.y - line0_y).abs() > 1.0);
+        if let Some(p) = first_on_line1 {
+            assert!(
+                p.x < 5.0,
+                "first position on wrapped line should be near x=0, got {}",
+                p.x
+            );
+        }
+    }
+
+    #[test]
+    fn positions_2d_x_monotonic_per_visual_line() {
+        let mut r = renderer();
+        let pos = r.grapheme_positions_2d("hello world\nfoo bar baz", 16.0, None);
+
+        let mut current_y = pos[0].y;
+        let mut prev_x = -1.0f32;
+        for p in &pos {
+            if (p.y - current_y).abs() > 1.0 {
+                // New line — reset x tracking
+                current_y = p.y;
+                prev_x = -1.0;
+            }
+            assert!(
+                p.x >= prev_x - 0.01,
+                "x should increase on each visual line: {} >= {}",
+                p.x,
+                prev_x
+            );
+            prev_x = p.x;
+        }
+    }
+
+    #[test]
+    fn positions_2d_three_lines() {
+        let mut r = renderer();
+        let pos = r.grapheme_positions_2d("aaa\nbbb\nccc", 16.0, None);
+        // 11 graphemes + 1 = 12
+        assert_eq!(pos.len(), 12);
+
+        // Three distinct y values
+        let y0 = pos[0].y;
+        let y1 = pos[4].y; // after first \n
+        let y2 = pos[8].y; // after second \n
+
+        assert!(y1 > y0 + 1.0, "line 1 below line 0");
+        assert!(y2 > y1 + 1.0, "line 2 below line 1");
+
+        // Lines are evenly spaced
+        let spacing_01 = y1 - y0;
+        let spacing_12 = y2 - y1;
+        assert!(
+            (spacing_01 - spacing_12).abs() < 1.0,
+            "line spacing should be consistent: {} vs {}",
+            spacing_01,
+            spacing_12
+        );
+    }
+
+    // ── hit_to_grapheme_2d ──────────────────────────────────────────
+
+    #[test]
+    fn hit_2d_start_of_text() {
+        let mut r = renderer();
+        let idx = r.hit_to_grapheme_2d("abc\ndef", 16.0, None, 0.0, 0.0);
+        assert_eq!(idx, 0);
+    }
+
+    #[test]
+    fn hit_2d_second_line() {
+        let mut r = renderer();
+        let pos = r.grapheme_positions_2d("abc\ndef", 16.0, None);
+        let line1_y = pos[4].y; // start of "def" line
+
+        // Click at x=0 on line 1 → should be at start of line 1
+        let idx = r.hit_to_grapheme_2d("abc\ndef", 16.0, None, 0.0, line1_y + 2.0);
+        assert_eq!(idx, 4, "clicking at start of line 1 should give index 4 (after \\n)");
+    }
+
+    #[test]
+    fn hit_2d_past_end_snaps_to_last() {
+        let mut r = renderer();
+        let pos = r.grapheme_positions_2d("abc", 16.0, None);
+        let last_x = pos.last().unwrap().x;
+
+        let idx = r.hit_to_grapheme_2d("abc", 16.0, None, last_x + 100.0, 0.0);
+        assert_eq!(idx, 3, "clicking past end should give last position");
+    }
+
+    // ── grapheme_x_positions (singleline) ───────────────────────────
+
+    #[test]
+    fn x_positions_count() {
+        let mut r = renderer();
+        let pos = r.grapheme_x_positions("hello", 16.0);
+        assert_eq!(pos.len(), 6, "5 graphemes + 1 = 6 boundaries");
+    }
+
+    #[test]
+    fn x_positions_start_at_zero() {
+        let mut r = renderer();
+        let pos = r.grapheme_x_positions("abc", 16.0);
+        assert!((pos[0] - 0.0).abs() < 0.01, "first position should be 0");
+    }
+
+    #[test]
+    fn x_positions_monotonic() {
+        let mut r = renderer();
+        let pos = r.grapheme_x_positions("hello world", 16.0);
+        for w in pos.windows(2) {
+            assert!(w[1] >= w[0] - 0.01, "x should increase: {} >= {}", w[1], w[0]);
         }
     }
 }
