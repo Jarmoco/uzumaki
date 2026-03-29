@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = [ "crates/uzumaki_core", "crates/refineable" ]
+members = [ "crates/uzumaki", "crates/refineable"]
 
 [workspace.package]
 publish = false
@@ -17,6 +17,9 @@ anyhow = "1.0.102"
 tsify = "0.5.6"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
+deno_runtime = "0.249.0"
+deno_core = "0.394.0"
+
 
 # [profile.release]
 # strip = "symbols"

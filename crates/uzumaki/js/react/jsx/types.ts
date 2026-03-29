@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { createElement } from 'react';
+
 import type {
   UzumakiMouseEvent,
   UzumakiKeyboardEvent,
@@ -117,29 +117,3 @@ export namespace JSX {
       };
   }
 }
-
-export function jsx(
-  type: string,
-  props: Record<string, any>,
-  key?: string,
-): JSX.Element {
-  if (key !== undefined) {
-    return createElement(type, { ...props, key });
-  }
-  return createElement(type, props);
-}
-
-export function jsxs(
-  type: string,
-  props: Record<string, any>,
-  key?: string,
-): JSX.Element {
-  if (key !== undefined) {
-    return createElement(type, { ...props, key });
-  }
-  return createElement(type, props);
-}
-
-export const jsxDEV = jsx;
-
-export const Fragment = Symbol('Fragment');

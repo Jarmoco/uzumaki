@@ -1,6 +1,6 @@
 use unicode_segmentation::UnicodeSegmentation;
 
-// ── TextBuffer ───────────────────────────────────────────────────────
+// todo we can use cosmic text TextBuffer instead ?
 // Pure text storage. No selection, no editing policy — just insert/delete at positions.
 
 pub struct TextBuffer {
@@ -15,8 +15,6 @@ impl TextBuffer {
             lines: vec![String::new()],
         }
     }
-
-    // ── Accessors ────────────────────────────────────────────────────
 
     pub fn text(&self) -> String {
         self.lines.join("\n")

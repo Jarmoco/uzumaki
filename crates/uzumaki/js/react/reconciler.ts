@@ -1,8 +1,7 @@
 import ReactReconciler, { type EventPriority } from 'react-reconciler';
-import { DefaultEventPriority } from 'react-reconciler/constants';
+import { DefaultEventPriority } from 'react-reconciler/constants.js'; // fixme our runtime doesnt do probing for imports
 import type { JSX } from './jsx/runtime';
-import * as core from '../bindings';
-import { PropKey } from '../bindings';
+import core, { PropKey } from '../core';
 import { eventManager } from '../events';
 import { Window } from '../window';
 
@@ -84,7 +83,7 @@ const ENUM_KEYS = new Set([
 
 // ── Value conversion helpers ─────────────────────────────────────────
 
-function toJsLength(value: any): { value: number; unit: number } {
+function toLength(value: any): { value: number; unit: number } {
   if (typeof value === 'number') return { value, unit: 0 };
   const s = String(value);
   if (s === 'auto') return { value: 0, unit: 3 };
@@ -94,7 +93,7 @@ function toJsLength(value: any): { value: number; unit: number } {
   return { value: parseFloat(s) || 0, unit: 0 };
 }
 
-function toJsColor(value: any): { r: number; g: number; b: number; a: number } {
+function toColor(value: any): { r: number; g: number; b: number; a: number } {
   if (typeof value === 'string') {
     if (value.startsWith('#')) {
       const hex = value.slice(1);
@@ -137,35 +136,22 @@ function toEnumValue(key: number, value: any): number {
       return FLEX_DIR_MAP[s] ?? 0;
     case PropKey.Items:
       return (
-        (
-          {
-            'flex-start': 0,
-            start: 0,
-            'flex-end': 1,
-            end: 1,
-            center: 2,
-            stretch: 3,
-            baseline: 4,
-          } as any
-        )[s] ?? 3
+        ({
+          'flex-start': 0, start: 0,
+          'flex-end': 1, end: 1,
+          center: 2, stretch: 3, baseline: 4,
+        } as any)[s] ?? 3
       );
     case PropKey.Justify:
       return (
-        (
-          {
-            'flex-start': 0,
-            start: 0,
-            'flex-end': 1,
-            end: 1,
-            center: 2,
-            'space-between': 3,
-            between: 3,
-            'space-around': 4,
-            around: 4,
-            'space-evenly': 5,
-            evenly: 5,
-          } as any
-        )[s] ?? 0
+        ({
+          'flex-start': 0, start: 0,
+          'flex-end': 1, end: 1,
+          center: 2,
+          'space-between': 3, between: 3,
+          'space-around': 4, around: 4,
+          'space-evenly': 5, evenly: 5,
+        } as any)[s] ?? 0
       );
     case PropKey.Display:
       return ({ none: 0, flex: 1, block: 2 } as any)[s] ?? 1;
@@ -193,9 +179,11 @@ function setNativeProp(
   if (key === undefined) return;
 
   if (LENGTH_KEYS.has(key)) {
-    core.setLengthProp(windowId, nodeId, key, toJsLength(value));
+    const l = toLength(value);
+    core.setLengthProp(windowId, nodeId, key, l.value, l.unit);
   } else if (COLOR_KEYS.has(key)) {
-    core.setColorProp(windowId, nodeId, key, toJsColor(value));
+    const c = toColor(value);
+    core.setColorProp(windowId, nodeId, key, c.r, c.g, c.b, c.a);
   } else if (ENUM_KEYS.has(key)) {
     core.setEnumProp(windowId, nodeId, key, toEnumValue(key, value));
   } else {
@@ -220,14 +208,9 @@ function clearNativeProp(
   if (key === undefined) return;
 
   if (LENGTH_KEYS.has(key)) {
-    core.setLengthProp(windowId, nodeId, key, { value: 0, unit: 3 });
+    core.setLengthProp(windowId, nodeId, key, 0, 3);
   } else if (COLOR_KEYS.has(key)) {
-    core.setColorProp(windowId, nodeId, key, {
-      r: 255,
-      g: 255,
-      b: 255,
-      a: 255,
-    });
+    core.setColorProp(windowId, nodeId, key, 255, 255, 255, 255);
   } else if (ENUM_KEYS.has(key)) {
     core.setEnumProp(windowId, nodeId, key, 0);
   } else {
@@ -322,7 +305,6 @@ abstract class BaseElement {
   }
 }
 
-/** Container element: `<view>`, `<button>`, or any non-text/non-input element. */
 class ViewElement extends BaseElement {
   constructor(windowId: number, type: string, props: Record<string, any>) {
     const id = core.createElement(windowId, type);
@@ -376,7 +358,6 @@ const INPUT_ATTR_NAMES = new Set([
   'secure',
 ]);
 
-/** Input element: `<input>`. Has input-specific attributes (value, placeholder, etc.). */
 class InputElement extends BaseElement {
   inputAttrs: Record<string, any> = {};
   handle: InputHandle | null = null;
@@ -393,12 +374,7 @@ class InputElement extends BaseElement {
 
   private parseProps(props: Record<string, any>): void {
     for (const key in props) {
-      if (
-        key === 'children' ||
-        key === 'key' ||
-        key === 'ref' ||
-        key === 'handle'
-      )
+      if (key === 'children' || key === 'key' || key === 'ref' || key === 'handle')
         continue;
       const value = props[key];
       if (value == null) continue;
@@ -424,13 +400,11 @@ class InputElement extends BaseElement {
     handle.__nodeId = this.id;
     handle.__windowId = this.windowId;
 
-    // Apply initial value if set
     const initial = (handle as any).__initialValue;
     if (initial) {
       core.setInputValue(this.windowId, this.id, initial);
     }
 
-    // Register internal onInput handler that calls handle's onChange
     eventManager.addHandlerByName(this.id, 'input', (ev: any) => {
       if (this.handle?.__onChange) {
         this.handle.__onChange(ev.value);
@@ -453,12 +427,7 @@ class InputElement extends BaseElement {
     const newEvents: Map<string, Function> = new Map();
 
     for (const key in newProps) {
-      if (
-        key === 'children' ||
-        key === 'key' ||
-        key === 'ref' ||
-        key === 'handle'
-      )
+      if (key === 'children' || key === 'key' || key === 'ref' || key === 'handle')
         continue;
       const value = newProps[key];
       if (value == null) continue;
@@ -474,14 +443,12 @@ class InputElement extends BaseElement {
     this.updateStyles(newStyles);
     this.updateEvents(newEvents);
 
-    // Handle prop swap
     const newHandle = newProps.handle;
     if (newHandle !== this.handle) {
       this.unbindHandle();
       this.bindHandle(newHandle);
     }
 
-    // When handle is present, skip value/onInput from inputAttrs — handle owns them
     if (this.handle) {
       delete newInputAttrs.value;
     }
@@ -532,7 +499,6 @@ class InputElement extends BaseElement {
   }
 }
 
-/** Text leaf element: `<text>`, `<p>`, or raw text nodes. */
 class TextElement extends BaseElement {
   textContent: string;
 
@@ -592,15 +558,12 @@ class TextElement extends BaseElement {
     this.updateStyles(newStyles);
     this.updateEvents(newEvents);
 
-    const oldText = getTextContent(oldChildren);
     const newText = getTextContent(newChildren);
     this.setText(newText);
   }
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
-
-export { eventManager } from '../events';
 
 type Container = {
   window: Window;
@@ -806,15 +769,15 @@ const reconciler = ReactReconciler<
     currentContainer = null;
   },
 
-  preparePortalMount: () => {},
+  preparePortalMount: () => { },
   scheduleTimeout: (fn, delay) => setTimeout(fn, delay),
   cancelTimeout: (id) => clearTimeout(id),
   noTimeout: undefined,
   isPrimaryRenderer: true,
   getInstanceFromNode: () => null,
-  beforeActiveInstanceBlur: () => {},
-  afterActiveInstanceBlur: () => {},
-  prepareScopeUpdate: () => {},
+  beforeActiveInstanceBlur: () => { },
+  afterActiveInstanceBlur: () => { },
+  prepareScopeUpdate: () => { },
   getInstanceFromScope: () => null,
   supportsHydration: false,
   NotPendingTransition: undefined,
@@ -828,16 +791,16 @@ const reconciler = ReactReconciler<
   },
   getCurrentUpdatePriority: () => currentPriority,
   resolveUpdatePriority: () => DefaultEventPriority,
-  resetFormInstance: () => {},
-  requestPostPaintCallback: () => {},
+  resetFormInstance: () => { },
+  requestPostPaintCallback: () => { },
   shouldAttemptEagerTransition: () => false,
-  trackSchedulerEvent: () => {},
+  trackSchedulerEvent: () => { },
   resolveEventType: () => null,
   resolveEventTimeStamp: () => Date.now(),
   maySuspendCommit: () => false,
   preloadInstance: () => false,
   startSuspendingCommit: () => false,
-  suspendInstance: () => {},
+  suspendInstance: () => { },
   waitForCommitToBeReady: () => null,
 });
 
@@ -861,7 +824,7 @@ export function render(window: Window, element: JSX.Element) {
     console.error,
     console.error,
     console.error,
-    () => {},
+    () => { },
   );
 
   roots.set(window.label, { root, container });

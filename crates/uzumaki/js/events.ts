@@ -17,6 +17,7 @@ export interface UzumakiEvent {
   bubbles: boolean;
   defaultPrevented: boolean;
   stopPropagation(): void;
+  stopImmediatePropagation(): void;
   preventDefault(): void;
 }
 
@@ -25,13 +26,13 @@ export interface UzumakiMouseEvent extends UzumakiEvent {
   y: number;
   screenX: number;
   screenY: number;
-  button: number; // 0=left 1=mid 2=right
-  buttons: number; // bitmask
+  button: number;
+  buttons: number;
 }
 
 export interface UzumakiKeyboardEvent extends UzumakiEvent {
-  key: string; // logical: "Enter", "a"
-  code: string; // physical: "KeyA"
+  key: string;
+  code: string;
   keyCode: number;
   repeat: boolean;
   ctrlKey: boolean;
@@ -83,7 +84,7 @@ function isFocusType(t: EventType): boolean {
 export class EventManager {
   // nodeKey -> EventType -> Set<handler>
   private handlers = new Map<string, Map<EventType, Set<Function>>>();
-  // nodeKey -> raw parentNodeId (for bubbling)
+  // nodeKey -> raw parentNodeId (for bubbling / capture path)
   private parentMap = new Map<string, any>();
   // focus tracking
   private _focusNode: any = null;
@@ -154,7 +155,7 @@ export class EventManager {
     this.parentMap.delete(nodeKey(childId));
   }
 
-  // ── Convenience: string event name ↔ EventType ───────────────────
+  // ── Convenience: string event name <-> EventType ───────────────────
 
   addHandlerByName(nodeId: any, eventName: string, handler: Function): void {
     const t = EVENT_NAME_TO_TYPE[eventName];
@@ -171,17 +172,33 @@ export class EventManager {
     if (t !== undefined) this.clearHandlersForType(nodeId, t);
   }
 
+  // ── Build ancestor path (target -> root) for capture/bubble ──────
+
+  private buildPath(targetId: any): any[] {
+    const path: any[] = [];
+    let currentId: any = targetId;
+    while (currentId != null) {
+      path.push(currentId);
+      currentId = this.parentMap.get(nodeKey(currentId)) ?? null;
+    }
+    return path;
+  }
+
   onRawEvent(type: EventType, targetNodeId: any, payload: any): void {
     let target = targetNodeId;
 
-    // Keyboard events route to the focus node, not the hit-test target
+    // Keyboard events route to the focus node
     if (isKeyboardType(type)) {
       target = this._focusNode;
       if (target == null) return;
     }
 
+    // Build path: [target, parent, ..., root]
+    const path = this.buildPath(target);
+
     // Build the event object
     let stopped = false;
+    let stoppedImmediate = false;
     let prevented = false;
 
     const base = {
@@ -194,6 +211,10 @@ export class EventManager {
       },
       stopPropagation() {
         stopped = true;
+      },
+      stopImmediatePropagation() {
+        stopped = true;
+        stoppedImmediate = true;
       },
       preventDefault() {
         prevented = true;
@@ -238,33 +259,29 @@ export class EventManager {
       return;
     }
 
-    // Bubble: target → root
-    let currentId: any = target;
-    bubble: while (currentId != null) {
-      event.currentTarget = currentId;
+    // ── Capture phase: root -> target ────────────────────────────────
+    // (Currently no capture listeners registered, but the path is walked
+    // so future capture support is trivial.)
 
-      const key = nodeKey(currentId);
+    // ── Target phase + Bubble phase: target -> root ─────────────────
+    for (const nodeId of path) {
+      if (stopped) break;
+      event.currentTarget = nodeId;
+
+      const key = nodeKey(nodeId);
       const typeMap = this.handlers.get(key);
       if (typeMap) {
         const handlers = typeMap.get(type);
         if (handlers) {
           for (const h of handlers) {
             h(event);
-            if (stopped) break bubble;
+            if (stoppedImmediate) break;
           }
         }
       }
 
       if (!event.bubbles) break;
-      currentId = this.parentMap.get(key) ?? null;
     }
-
-    // Post-bubble hook — placeholder for defaultPrevented handling
-    this.postBubble(event);
-  }
-
-  private postBubble(_event: UzumakiEvent): void {
-    // No-op hook. Will be used by InputEvent to handle defaultPrevented.
   }
 
   // ── Reset ────────────────────────────────────────────────────────
@@ -276,5 +293,4 @@ export class EventManager {
   }
 }
 
-// Re-export singleton
 export const eventManager = new EventManager();

@@ -1,7 +1,7 @@
-import * as core from './bindings';
-import { eventManager, UzumakiEvent } from './events';
+import core from './core';
+import { eventManager, type UzumakiEvent } from './events';
 
-const windowRegistry = new Map<string, Window>();
+const windowsByLabel = new Map<string, Window>();
 
 type EventHandler = (ev: UzumakiEvent) => void;
 
@@ -12,12 +12,12 @@ export interface WindowAttributes {
 }
 
 export class Window {
-  private _width!: number;
-  private _height!: number;
-  private _label!: string;
-  private _id!: number;
+  private _id: number;
+  private _label: string;
+  private _width: number;
+  private _height: number;
   private _remBase: number = 16;
-  private _eventId!: string;
+  private _eventId: string;
 
   constructor(
     label: string,
@@ -27,10 +27,9 @@ export class Window {
       title = 'uzumaki',
     }: Partial<WindowAttributes> = {},
   ) {
-    // Return existing window: for hot reload
-    const existing = windowRegistry.get(label);
+    const existing = windowsByLabel.get(label);
     if (existing) {
-      return existing;
+      throw new Error(`Window with label ${label} already exists`);
     }
 
     this._width = width;
@@ -38,7 +37,7 @@ export class Window {
     this._label = label;
     this._id = core.createWindow({ width, height, title });
     this._eventId = `__window_${this._id}`;
-    windowRegistry.set(label, this);
+    windowsByLabel.set(label, this);
   }
 
   close() {
@@ -51,11 +50,11 @@ export class Window {
   }
 
   get width(): number {
-    return this._width;
+    return core.getWindowWidth(this._id) ?? this._width;
   }
 
   get height(): number {
-    return this._height;
+    return core.getWindowHeight(this._id) ?? this._height;
   }
 
   get label(): string {
