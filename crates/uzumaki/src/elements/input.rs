@@ -5,6 +5,13 @@ use vello::peniko::{Color as VelloColor, Fill};
 use crate::style::{Bounds, Color, Corners, Edges, Style};
 use crate::text::{GlyphPos2D, TextRenderer};
 
+/// Returned by `paint_input` for multiline inputs so the caller can render a scrollbar.
+pub struct InputContentInfo {
+    pub content_height: f64,
+    pub visible_height: f64,
+    pub scroll_offset_y: f64,
+}
+
 /// Snapshot of input state collected during the render-tree walk.
 /// Decouples painting from the live InputState/Node.
 pub struct InputRenderInfo {
@@ -23,6 +30,7 @@ pub struct InputRenderInfo {
 }
 
 /// Paint an input element with its text, selection highlight, and cursor.
+/// Returns the content height for multiline inputs (for scrollbar rendering).
 pub fn paint_input(
     scene: &mut Scene,
     text_renderer: &mut TextRenderer,
@@ -30,7 +38,7 @@ pub fn paint_input(
     style: &Style,
     input: &InputRenderInfo,
     scale: f64,
-) {
+) -> Option<InputContentInfo> {
     let padding: f64 = 8.0;
     let text_x = bounds.x + padding;
     let text_y = bounds.y;
@@ -66,8 +74,8 @@ pub fn paint_input(
     let is_empty = input.display_text.is_empty();
     let line_height = (input.font_size * 1.2).round();
 
-    if input.multiline {
-        paint_multiline(
+    let content_info = if input.multiline {
+        Some(paint_multiline(
             scene,
             text_renderer,
             input,
@@ -79,7 +87,7 @@ pub fn paint_input(
             is_empty,
             style,
             scale,
-        );
+        ))
     } else {
         paint_singleline(
             scene,
@@ -93,9 +101,11 @@ pub fn paint_input(
             is_empty,
             scale,
         );
-    }
+        None
+    };
 
     scene.pop_layer();
+    content_info
 }
 
 // ── Coordinate helpers ───────────────────────────────────────────────
@@ -199,7 +209,7 @@ fn paint_multiline(
     is_empty: bool,
     style: &Style,
     scale: f64,
-) {
+) -> InputContentInfo {
     let top_pad: f64 = if style.padding.top > 0.0 {
         style.padding.top as f64
     } else {
@@ -270,6 +280,16 @@ fn paint_multiline(
         };
         let (cx, cy) = to_screen(cp, text_x, text_y, top_pad, scroll_y);
         paint_cursor(scene, cx, cy, line_height, scale);
+    }
+
+    // Content height = last line's y + one line_height + top padding
+    let last_y = positions.last().map_or(0.0, |p| p.y as f64);
+    let content_height = last_y + line_height as f64 + top_pad;
+
+    InputContentInfo {
+        content_height,
+        visible_height: text_h,
+        scroll_offset_y: scroll_y,
     }
 }
 

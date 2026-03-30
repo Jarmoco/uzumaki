@@ -12,8 +12,8 @@ const window = new Window('main', {
   title: 'Uzumaki Dashboard',
 });
 
-window.on('click', (ev) => {
-  console.log('Click window');
+window.on('click', (_ev) => {
+  // console.log('Click window');
 });
 
 type Examples = 'counter' | 'dashboard';

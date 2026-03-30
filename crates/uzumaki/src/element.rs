@@ -543,6 +543,7 @@ impl Dom {
             content_height: f32,
             visible_height: f32,
             thumb_hovered: bool,
+            mouse_in_view: bool,
             scale: f64,
         }
 
@@ -684,6 +685,17 @@ impl Dom {
                                         .map_or(false, |(mx, my)| t.thumb_bounds.contains(mx, my))
                             });
 
+                        let mouse_in_view = self
+                            .scroll_drag
+                            .as_ref()
+                            .map_or(false, |d| d.node_id == node_id)
+                            || self
+                                .hit_state
+                                .mouse_position
+                                .map_or(false, |(mx, my)| {
+                                    mx >= x && mx <= x + w && my >= y && my <= y + h
+                                });
+
                         // Push in reverse order for LIFO stack:
                         // 6. PaintThumb (last to execute)
                         if overflows {
@@ -697,6 +709,7 @@ impl Dom {
                                 content_height,
                                 visible_height,
                                 thumb_hovered,
+                                mouse_in_view,
                                 scale,
                             }));
                         }
@@ -745,7 +758,7 @@ impl Dom {
                     }
 
                     if let Some(input_info) = &info.input {
-                        crate::elements::input::paint_input(
+                        let content_info = crate::elements::input::paint_input(
                             scene,
                             text_renderer,
                             bounds,
@@ -753,6 +766,89 @@ impl Dom {
                             input_info,
                             scale,
                         );
+
+                        // Paint scrollbar for multiline inputs with overflow
+                        if let Some(ci) = content_info {
+                            if ci.content_height > ci.visible_height {
+                                let mouse_in = self
+                                    .scroll_drag
+                                    .as_ref()
+                                    .map_or(false, |d| d.node_id == info.node_id)
+                                    || self
+                                        .hit_state
+                                        .mouse_position
+                                        .map_or(false, |(mx, my)| bounds.contains(mx, my));
+
+                                let thumb_width = 4.0;
+                                let thumb_margin = 4.0;
+                                let ratio = ci.visible_height / ci.content_height;
+                                let thumb_height = (bounds.height * ratio).max(24.0);
+                                let max_scroll = (ci.content_height - ci.visible_height).max(0.0);
+                                let scroll_ratio = if max_scroll > 0.0 {
+                                    ci.scroll_offset_y / max_scroll
+                                } else {
+                                    0.0
+                                };
+                                let thumb_y =
+                                    bounds.y + scroll_ratio * (bounds.height - thumb_height);
+                                let thumb_x =
+                                    bounds.x + bounds.width - thumb_width - thumb_margin;
+
+                                let thumb_bounds =
+                                    Bounds::new(thumb_x, thumb_y, thumb_width, thumb_height);
+
+                                // Register for hit testing (drag + wheel)
+                                self.scroll_thumbs.push(ScrollThumbRect {
+                                    node_id: info.node_id,
+                                    thumb_bounds,
+                                    view_bounds: bounds,
+                                    content_height: ci.content_height as f32,
+                                    visible_height: ci.visible_height as f32,
+                                });
+
+                                if mouse_in {
+                                    let thumb_hovered = self
+                                        .scroll_drag
+                                        .as_ref()
+                                        .map_or(false, |d| d.node_id == info.node_id)
+                                        || self
+                                            .hit_state
+                                            .mouse_position
+                                            .map_or(false, |(mx, my)| {
+                                                thumb_bounds.contains(mx, my)
+                                            });
+                                    let alpha = if thumb_hovered { 140u8 } else { 90u8 };
+                                    let color = VelloColor::from_rgba8(255, 255, 255, alpha);
+                                    let radius = thumb_width / 2.0;
+                                    let rect = Rect::new(
+                                        thumb_x,
+                                        thumb_y,
+                                        thumb_x + thumb_width,
+                                        thumb_y + thumb_height,
+                                    );
+                                    let rounded = RoundedRect::from_rect(
+                                        rect,
+                                        RoundedRectRadii::from_single_radius(radius),
+                                    );
+                                    // Clip to input bounds
+                                    let clip = Rect::new(
+                                        bounds.x,
+                                        bounds.y,
+                                        bounds.x + bounds.width,
+                                        bounds.y + bounds.height,
+                                    );
+                                    scene.push_clip_layer(Fill::NonZero, Affine::scale(scale), &clip);
+                                    scene.fill(
+                                        Fill::NonZero,
+                                        Affine::scale(scale),
+                                        color,
+                                        None,
+                                        &rounded,
+                                    );
+                                    scene.pop_layer();
+                                }
+                            }
+                        }
                     } else if let Some((content, font_size, color)) = &info.text {
                         crate::elements::text::paint_text(
                             scene,
@@ -781,6 +877,11 @@ impl Dom {
                     scene.pop_layer();
                 }
                 RenderCommand::PaintThumb(thumb) => {
+                    // Only show scrollbar when mouse is inside the scrollable node
+                    if !thumb.mouse_in_view {
+                        continue;
+                    }
+
                     // Scrollbar thumb: 4px wide, 4px margin from right edge
                     let thumb_width = 4.0;
                     let thumb_margin = 4.0;

@@ -1367,8 +1367,10 @@ impl ApplicationHandler<UserEvent> for Application {
                         let input_events = {
                             let mut state = self.app_state.borrow_mut();
                             state.windows.get_mut(&wid).map(|entry| {
+                                let handle = entry.handle.as_mut().unwrap();
                                 let (redraw, events) = event_dispatch::handle_key_for_input(
                                     &mut entry.dom,
+                                    handle,
                                     wid,
                                     &key_event,
                                     modifiers,

@@ -84,85 +84,86 @@ pub fn handle_redraw(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
 ) {
-    // Update scroll offset for focused input before paint
-    if let Some(focused_id) = dom.focused_node {
-        let scroll_info = dom.nodes.get(focused_id).and_then(|node| {
-            node.behavior.as_input().map(|is| {
-                let display_text = is.display_text();
-                let font_size = node.style.text.font_size;
-                let padding = node.style.padding.left;
-                let input_padding = if padding > 0.0 { padding } else { 8.0 };
-                let pt = node.style.padding.top;
-                let top_pad = if pt > 0.0 { pt } else { 4.0 };
-                let cursor_pos = is.selection.active;
-                let taffy_node = node.taffy_node;
-                (
-                    display_text,
-                    font_size,
-                    input_padding,
-                    top_pad,
-                    cursor_pos,
-                    taffy_node,
-                )
-            })
-        });
-        if let Some((display_text, font_size, input_padding, top_pad, cursor_pos, taffy_node)) =
-            scroll_info
-        {
-            let is_multiline = dom
-                .nodes
-                .get(focused_id)
-                .and_then(|n| n.behavior.as_input())
-                .map(|is| is.multiline)
-                .unwrap_or(false);
+    handle.paint_and_present(device, queue, dom);
+}
 
-            let (input_width, input_height) = dom
-                .taffy
-                .layout(taffy_node)
-                .map(|l| {
-                    (
-                        l.size.width as f32 - input_padding * 2.0,
-                        l.size.height as f32,
-                    )
-                })
-                .unwrap_or((200.0, 100.0));
+/// Scroll the focused input so the cursor stays visible.
+/// Call this after any action that moves the cursor (key press, click, drag).
+pub fn scroll_input_to_cursor(dom: &mut Dom, handle: &mut Window) {
+    let Some(focused_id) = dom.focused_node else {
+        return;
+    };
+    let scroll_info = dom.nodes.get(focused_id).and_then(|node| {
+        node.behavior.as_input().map(|is| {
+            let display_text = is.display_text();
+            let font_size = node.style.text.font_size;
+            let padding = node.style.padding.left;
+            let input_padding = if padding > 0.0 { padding } else { 8.0 };
+            let pt = node.style.padding.top;
+            let top_pad = if pt > 0.0 { pt } else { 4.0 };
+            let cursor_pos = is.selection.active;
+            let taffy_node = node.taffy_node;
+            let multiline = is.multiline;
+            (
+                display_text,
+                font_size,
+                input_padding,
+                top_pad,
+                cursor_pos,
+                taffy_node,
+                multiline,
+            )
+        })
+    });
+    let Some((display_text, font_size, input_padding, top_pad, cursor_pos, taffy_node, multiline)) =
+        scroll_info
+    else {
+        return;
+    };
 
-            if is_multiline {
-                let positions = handle.text_renderer.grapheme_positions_2d(
-                    &display_text,
-                    font_size,
-                    Some(input_width),
-                );
-                let cursor_y = if cursor_pos < positions.len() {
-                    positions[cursor_pos].y
-                } else {
-                    positions.last().map(|p| p.y).unwrap_or(0.0)
-                };
-                let line_height = (font_size * 1.2).round();
-                if let Some(node) = dom.nodes.get_mut(focused_id) {
-                    if let Some(is) = node.behavior.as_input_mut() {
-                        is.update_scroll_y(cursor_y, line_height, input_height - top_pad * 2.0);
-                    }
-                }
-            } else {
-                let positions = handle
-                    .text_renderer
-                    .grapheme_x_positions(&display_text, font_size);
-                let cursor_x = if cursor_pos < positions.len() {
-                    positions[cursor_pos]
-                } else {
-                    positions.last().copied().unwrap_or(0.0)
-                };
-                if let Some(node) = dom.nodes.get_mut(focused_id) {
-                    if let Some(is) = node.behavior.as_input_mut() {
-                        is.update_scroll(cursor_x, input_width);
-                    }
-                }
+    let (input_width, input_height) = dom
+        .taffy
+        .layout(taffy_node)
+        .map(|l| {
+            (
+                l.size.width as f32 - input_padding * 2.0,
+                l.size.height as f32,
+            )
+        })
+        .unwrap_or((200.0, 100.0));
+
+    if multiline {
+        let positions = handle.text_renderer.grapheme_positions_2d(
+            &display_text,
+            font_size,
+            Some(input_width),
+        );
+        let cursor_y = if cursor_pos < positions.len() {
+            positions[cursor_pos].y
+        } else {
+            positions.last().map(|p| p.y).unwrap_or(0.0)
+        };
+        let line_height = (font_size * 1.2).round();
+        if let Some(node) = dom.nodes.get_mut(focused_id) {
+            if let Some(is) = node.behavior.as_input_mut() {
+                is.update_scroll_y(cursor_y, line_height, input_height - top_pad * 2.0);
+            }
+        }
+    } else {
+        let positions = handle
+            .text_renderer
+            .grapheme_x_positions(&display_text, font_size);
+        let cursor_x = if cursor_pos < positions.len() {
+            positions[cursor_pos]
+        } else {
+            positions.last().copied().unwrap_or(0.0)
+        };
+        if let Some(node) = dom.nodes.get_mut(focused_id) {
+            if let Some(is) = node.behavior.as_input_mut() {
+                is.update_scroll(cursor_x, input_width);
             }
         }
     }
-
-    handle.paint_and_present(device, queue, dom);
 }
 
 // ── Cursor moved ─────────────────────────────────────────────────────
@@ -196,6 +197,8 @@ pub fn handle_cursor_moved(
         if let Some(node) = dom.nodes.get_mut(nid) {
             if let Some(ss) = &mut node.scroll_state {
                 ss.scroll_offset_y = new_offset.clamp(0.0, max);
+            } else if let Some(is) = node.behavior.as_input_mut() {
+                is.scroll_offset_y = new_offset.clamp(0.0, max);
             }
         }
         needs_redraw = true;
@@ -280,6 +283,7 @@ pub fn handle_cursor_moved(
                         is.reset_blink();
                     }
                 }
+                scroll_input_to_cursor(dom, handle);
                 needs_redraw = true;
             }
         }
@@ -341,8 +345,13 @@ pub fn handle_mouse_input(
             let start_offset = dom
                 .nodes
                 .get(nid)
-                .and_then(|n| n.scroll_state.as_ref())
-                .map(|ss| ss.scroll_offset_y)
+                .map(|n| {
+                    n.scroll_state
+                        .as_ref()
+                        .map(|ss| ss.scroll_offset_y)
+                        .or_else(|| n.behavior.as_input().map(|is| is.scroll_offset_y))
+                        .unwrap_or(0.0)
+                })
                 .unwrap_or(0.0);
             dom.scroll_drag = Some(ScrollDragState {
                 node_id: nid,
@@ -522,6 +531,7 @@ pub fn handle_mouse_input(
                         }
                     }
 
+                    scroll_input_to_cursor(dom, handle);
                     dom.dragging_input = Some(nid);
                 } else {
                     // Clicked non-input: blur focused
@@ -631,6 +641,7 @@ pub fn build_key_event(
 /// Returns (needs_redraw, events_to_dispatch).
 pub fn handle_key_for_input(
     dom: &mut Dom,
+    handle: &mut Window,
     wid: u32,
     key_event: &winit::event::KeyEvent,
     modifiers: u32,
@@ -719,6 +730,10 @@ pub fn handle_key_for_input(
 
     dom.focused_node = new_focus;
 
+    if needs_redraw {
+        scroll_input_to_cursor(dom, handle);
+    }
+
     (needs_redraw, events)
 }
 
@@ -770,6 +785,9 @@ pub fn handle_mouse_wheel(dom: &mut Dom, scroll_delta_y: f64) -> bool {
                 if let Some(ss) = &mut node.scroll_state {
                     ss.scroll_offset_y =
                         (ss.scroll_offset_y - scroll_delta_y as f32).clamp(0.0, max_scroll);
+                } else if let Some(is) = node.behavior.as_input_mut() {
+                    is.scroll_offset_y =
+                        (is.scroll_offset_y - scroll_delta_y as f32).clamp(0.0, max_scroll);
                 }
             }
             needs_redraw = true;
