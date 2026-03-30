@@ -1147,9 +1147,7 @@ impl Application {
         }
 
         // JS returns true if defaultPrevented
-        result
-            .map(|v| v.is_true())
-            .unwrap_or(false)
+        result.map(|v| v.is_true()).unwrap_or(false)
     }
 }
 
@@ -1218,11 +1216,9 @@ impl ApplicationHandler<UserEvent> for Application {
                 drop(state);
 
                 // Emit window load event after handle is ready
-                self.dispatch_event_to_js(
-                    &event_dispatch::AppEvent::WindowLoad(
-                        event_dispatch::WindowLoadEventData { window_id: id },
-                    ),
-                );
+                self.dispatch_event_to_js(&event_dispatch::AppEvent::WindowLoad(
+                    event_dispatch::WindowLoadEventData { window_id: id },
+                ));
             }
             UserEvent::RequestRedraw { id } => {
                 let state = self.app_state.borrow();
@@ -1372,7 +1368,10 @@ impl ApplicationHandler<UserEvent> for Application {
                             let mut state = self.app_state.borrow_mut();
                             state.windows.get_mut(&wid).map(|entry| {
                                 let (redraw, events) = event_dispatch::handle_key_for_input(
-                                    &mut entry.dom, wid, &key_event, modifiers,
+                                    &mut entry.dom,
+                                    wid,
+                                    &key_event,
+                                    modifiers,
                                 );
                                 if redraw {
                                     needs_redraw = true;

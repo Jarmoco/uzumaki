@@ -2,7 +2,6 @@
 
 A native desktop UI framework for JavaScript/TypeScript. Uses a runtime built on **Deno**, **wgpu** for GPU rendering, and **Vello** for 2D vector graphics. The React reconciler lets you write native desktop apps with JSX.
 
-
 ## JSX
 
 Intrinsic elements: `<view>`, `<text>`, `<p>`, `<button>`
