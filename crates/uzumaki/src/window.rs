@@ -17,6 +17,7 @@ pub struct Window {
     pub(crate) scene: Scene,
     pub(crate) text_renderer: TextRenderer,
     valid_surface: bool,
+    vello_target: Option<(wgpu::Texture, wgpu::TextureView)>,
 }
 
 impl Window {
@@ -69,6 +70,7 @@ impl Window {
             scene,
             text_renderer: TextRenderer::new(),
             valid_surface,
+            vello_target: None,
         })
     }
 
@@ -100,22 +102,7 @@ impl Window {
         );
         dom.render(&mut self.scene, &mut self.text_renderer, scale);
 
-        // Render vello scene into an intermediate STORAGE texture
-        let target = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("vello_target"),
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-        let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+        let target_view = Self::ensure_vello_target(&mut self.vello_target, device, width, height);
 
         let render_params = RenderParams {
             base_color: Color::from_rgba8(24, 24, 37, 255),
@@ -124,7 +111,7 @@ impl Window {
             antialiasing_method: vello::AaConfig::Msaa16,
         };
         self.renderer
-            .render_to_texture(device, queue, &self.scene, &target_view, &render_params)
+            .render_to_texture(device, queue, &self.scene, target_view, &render_params)
             .expect("Failed to render");
 
         // Blit to surface
@@ -150,15 +137,43 @@ impl Window {
 
         let blitter = wgpu::util::TextureBlitter::new(device, self.surface_config.format);
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-        blitter.copy(device, &mut encoder, &target_view, &surface_view);
+        blitter.copy(device, &mut encoder, target_view, &surface_view);
         queue.submit([encoder.finish()]);
         surface_texture.present();
+    }
+
+    fn ensure_vello_target<'a>(
+        target: &'a mut Option<(wgpu::Texture, wgpu::TextureView)>,
+        device: &wgpu::Device,
+        width: u32,
+        height: u32,
+    ) -> &'a wgpu::TextureView {
+        if target.is_none() {
+            let texture = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("vello_target"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            *target = Some((texture, view));
+        }
+        &target.as_ref().unwrap().1
     }
 
     fn resize_surface(&mut self, device: &wgpu::Device, width: u32, height: u32) {
         self.surface_config.width = width;
         self.surface_config.height = height;
         self.surface.configure(device, &self.surface_config);
+        self.vello_target = None;
     }
 
     pub(crate) fn on_resize(&mut self, device: &wgpu::Device, width: u32, height: u32) -> bool {

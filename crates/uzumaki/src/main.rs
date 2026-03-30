@@ -1449,7 +1449,6 @@ impl ApplicationHandler<UserEvent> for Application {
                 state.winit_id_to_entry_id.remove(&window_id);
                 state.windows.remove(&wid);
                 if state.windows.is_empty() {
-                    drop(state);
                     event_loop.exit();
                     return;
                 }
@@ -1470,6 +1469,7 @@ impl ApplicationHandler<UserEvent> for Application {
 
 // Entry point
 fn main() {
+    #[cfg(target_os = "windows")]
     unsafe {
         std::env::set_var("WGPU_POWER_PREF", "high");
     }
