@@ -1055,6 +1055,7 @@ impl Application {
     fn tick_js(&mut self) {
         let rt = self.tokio_runtime.as_ref().unwrap();
         rt.block_on(async {
+            // cant we just do worker.js_runtime.poll_event_loop ?
             tokio::select! {
                 biased;
                 result = self.worker.run_event_loop(false) => {
@@ -1474,10 +1475,7 @@ fn main() {
         std::env::set_var("WGPU_POWER_PREF", "high");
     }
 
-    let tokio_runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .expect("failed to create tokio runtime");
+    let tokio_runtime = deno_runtime::tokio_util::create_basic_runtime();
 
     let mut args = std::env::args();
     args.next();
