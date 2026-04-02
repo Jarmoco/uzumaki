@@ -324,7 +324,10 @@ fn hit_text_in_run(
 ) -> Option<usize> {
     use crate::style::Bounds;
 
-    let run = dom.text_select_runs.iter().find(|r| r.root_id == root_id)?;
+    let run = dom
+        .selectable_text_runs
+        .iter()
+        .find(|r| r.root_id == root_id)?;
 
     // Find the text node closest to mouse position
     let mut best: Option<(crate::element::NodeId, f64, Bounds)> = None;
@@ -375,7 +378,11 @@ fn word_boundaries_in_run(
     root_id: crate::element::NodeId,
     flat_idx: usize,
 ) -> (usize, usize) {
-    let Some(run) = dom.text_select_runs.iter().find(|r| r.root_id == root_id) else {
+    let Some(run) = dom
+        .selectable_text_runs
+        .iter()
+        .find(|r| r.root_id == root_id)
+    else {
         return (flat_idx, flat_idx);
     };
     let chars: Vec<char> = run.flat_text.chars().collect();
@@ -777,8 +784,10 @@ pub fn handle_mouse_input(
                                 }
                                 4 => {
                                     // Select all text in the run
-                                    if let Some(run) =
-                                        dom.text_select_runs.iter().find(|r| r.root_id == run_root)
+                                    if let Some(run) = dom
+                                        .selectable_text_runs
+                                        .iter()
+                                        .find(|r| r.root_id == run_root)
                                     {
                                         dom.set_selection(DomSelection::new(
                                             run_root,
@@ -1013,7 +1022,7 @@ pub fn handle_key_for_view_selection(
     let SelectionRange { anchor, active } = sel.range;
 
     let run_len = dom
-        .text_select_runs
+        .selectable_text_runs
         .iter()
         .find(|r| r.root_id == root)
         .map(|r| r.total_graphemes)
@@ -1066,7 +1075,11 @@ pub fn handle_key_for_view_selection(
 
 /// Find the previous word boundary from a flat grapheme index in a text select run.
 fn prev_word_boundary_in_run(dom: &Dom, root_id: crate::element::NodeId, flat_idx: usize) -> usize {
-    let Some(run) = dom.text_select_runs.iter().find(|r| r.root_id == root_id) else {
+    let Some(run) = dom
+        .selectable_text_runs
+        .iter()
+        .find(|r| r.root_id == root_id)
+    else {
         return flat_idx;
     };
     let graphemes: Vec<&str> =
@@ -1094,7 +1107,11 @@ fn prev_word_boundary_in_run(dom: &Dom, root_id: crate::element::NodeId, flat_id
 
 /// Find the next word boundary from a flat grapheme index in a text select run.
 fn next_word_boundary_in_run(dom: &Dom, root_id: crate::element::NodeId, flat_idx: usize) -> usize {
-    let Some(run) = dom.text_select_runs.iter().find(|r| r.root_id == root_id) else {
+    let Some(run) = dom
+        .selectable_text_runs
+        .iter()
+        .find(|r| r.root_id == root_id)
+    else {
         return flat_idx;
     };
     let graphemes: Vec<&str> =

@@ -117,12 +117,12 @@ pub struct TextContent {
 
 #[derive(Clone, Debug)]
 pub struct InheritedProperties {
-    pub text_select: bool,
+    pub selectable: bool,
 }
 
 impl Default for InheritedProperties {
     fn default() -> Self {
-        Self { text_select: false }
+        Self { selectable: false }
     }
 }
 
@@ -238,7 +238,7 @@ pub struct Node {
     pub scroll_state: Option<ScrollState>,
     /// Whether text within this element is selectable.
     /// None = inherit from parent (default). Some(true) = selectable, Some(false) = not.
-    pub text_select: Option<bool>,
+    pub selectable: Option<bool>,
 }
 
 pub struct Dom {
@@ -274,7 +274,7 @@ pub struct Dom {
     /// textSelect root being dragged for selection.
     pub dragging_view_selection: Option<NodeId>,
     /// Text runs for textSelect subtrees, rebuilt each frame.
-    pub text_select_runs: Vec<TextSelectRun>,
+    pub selectable_text_runs: Vec<TextSelectRun>,
 }
 
 // Safety:  We only access it from main thread
@@ -300,7 +300,7 @@ impl Dom {
             scroll_lock: None,
             selection: SharedSelectionState::new(),
             dragging_view_selection: None,
-            text_select_runs: Vec::new(),
+            selectable_text_runs: Vec::new(),
         }
     }
 
@@ -341,7 +341,7 @@ impl Dom {
             style,
             interactivity: Interactivity::new(),
             scroll_state: None,
-            text_select: None,
+            selectable: None,
         });
         self.taffy
             .set_node_context(
@@ -378,7 +378,7 @@ impl Dom {
             style,
             interactivity: Interactivity::new(),
             scroll_state: None,
-            text_select: None,
+            selectable: None,
         });
         self.taffy
             .set_node_context(
@@ -414,7 +414,7 @@ impl Dom {
             style,
             interactivity: Interactivity::new(),
             scroll_state: None,
-            text_select: None,
+            selectable: None,
         });
         self.taffy
             .set_node_context(
@@ -734,8 +734,8 @@ impl Dom {
 
                         // Resolve inherited properties
                         let mut inherited = parent_inherited.clone();
-                        if let Some(ts) = node.text_select {
-                            inherited.text_select = ts;
+                        if let Some(ts) = node.selectable {
+                            inherited.selectable = ts;
                         }
 
                         let taffy_node = node.taffy_node;
@@ -770,8 +770,8 @@ impl Dom {
                         });
 
                         // Text nodes inside textSelect views need hitboxes for click-to-select
-                        let text_selectable = inherited.text_select && node.behavior.is_text();
-                        let needs_hitbox = node.interactivity.needs_hitbox() || text_selectable;
+                        let selectable_text = inherited.selectable && node.behavior.is_text();
+                        let needs_hitbox = node.interactivity.needs_hitbox() || selectable_text;
                         let is_scrollable = node.scroll_state.is_some();
                         let first_child = node.first_child;
 
@@ -1250,7 +1250,7 @@ impl Dom {
 
     /// Build text runs for all textSelect subtrees. Called each frame before render.
     pub fn build_text_select_runs(&mut self) {
-        self.text_select_runs.clear();
+        self.selectable_text_runs.clear();
         let Some(root) = self.root else { return };
 
         // DFS: (node_id, parent_resolved_text_select, current_run_index_or_none)
@@ -1258,13 +1258,13 @@ impl Dom {
 
         while let Some((node_id, parent_ts, run_idx)) = stack.pop() {
             let node = &self.nodes[node_id];
-            let resolved_ts = node.text_select.unwrap_or(parent_ts);
+            let resolved_ts = node.selectable.unwrap_or(parent_ts);
 
             // A node that explicitly enables textSelect when the parent scope
             // doesn't have it starts a new selection scope.
             let current_run = if resolved_ts && run_idx.is_none() {
-                let idx = self.text_select_runs.len();
-                self.text_select_runs.push(TextSelectRun {
+                let idx = self.selectable_text_runs.len();
+                self.selectable_text_runs.push(TextSelectRun {
                     root_id: node_id,
                     entries: Vec::new(),
                     flat_text: String::new(),
@@ -1281,7 +1281,7 @@ impl Dom {
             if let Some(tc) = node.behavior.as_text() {
                 if let Some(idx) = current_run {
                     let gc = tc.content.graphemes(true).count();
-                    let run = &mut self.text_select_runs[idx];
+                    let run = &mut self.selectable_text_runs[idx];
                     run.entries.push(TextRunEntry {
                         node_id,
                         flat_start: run.total_graphemes,
@@ -1315,7 +1315,11 @@ impl Dom {
         if sel.is_collapsed() {
             return map;
         }
-        let Some(run) = self.text_select_runs.iter().find(|r| r.root_id == sel.root) else {
+        let Some(run) = self
+            .selectable_text_runs
+            .iter()
+            .find(|r| r.root_id == sel.root)
+        else {
             return map;
         };
         let sel_start = sel.start();
@@ -1336,7 +1340,7 @@ impl Dom {
 
     /// Find the text run that contains a given text node.
     pub fn find_run_for_node(&self, node_id: NodeId) -> Option<&TextSelectRun> {
-        self.text_select_runs
+        self.selectable_text_runs
             .iter()
             .find(|run| run.entries.iter().any(|e| e.node_id == node_id))
     }
@@ -1346,7 +1350,7 @@ impl Dom {
         &self,
         node_id: NodeId,
     ) -> Option<(&TextSelectRun, &TextRunEntry)> {
-        for run in &self.text_select_runs {
+        for run in &self.selectable_text_runs {
             for entry in &run.entries {
                 if entry.node_id == node_id {
                     return Some((run, entry));
@@ -1358,7 +1362,7 @@ impl Dom {
 
     /// Check whether a node is a text node inside an active textSelect scope.
     pub fn is_text_selectable(&self, node_id: NodeId) -> bool {
-        self.text_select_runs
+        self.selectable_text_runs
             .iter()
             .any(|run| run.entries.iter().any(|e| e.node_id == node_id))
     }
@@ -1382,7 +1386,11 @@ impl Dom {
             }
         }
         // View text selection: look up in text_select_runs
-        let Some(run) = self.text_select_runs.iter().find(|r| r.root_id == sel.root) else {
+        let Some(run) = self
+            .selectable_text_runs
+            .iter()
+            .find(|r| r.root_id == sel.root)
+        else {
             return String::new();
         };
         let start = sel.start();
@@ -1423,7 +1431,7 @@ impl Dom {
         }
         // View text selection
         let run = self
-            .text_select_runs
+            .selectable_text_runs
             .iter()
             .find(|r| r.root_id == sel.root)?;
         Some(run.total_graphemes)

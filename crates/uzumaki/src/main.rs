@@ -473,7 +473,7 @@ pub fn op_set_f32_prop(
             }
             54 => {
                 // TextSelect
-                entry.dom.nodes[nid].text_select = Some(v > 0.5);
+                entry.dom.nodes[nid].selectable = Some(v > 0.5);
                 return;
             }
             _ => {}

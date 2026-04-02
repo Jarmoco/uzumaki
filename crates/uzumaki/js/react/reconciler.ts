@@ -58,7 +58,7 @@ const PROP_NAME_TO_KEY: Record<string, number> = {
   'active:opacity': PropKey.ActiveOpacity,
   'active:borderColor': PropKey.ActiveBorderColor,
   scrollable: PropKey.Scrollable,
-  textSelect: PropKey.TextSelect,
+  selectable: PropKey.TextSelect,
 };
 
 // ── Prop type categorization ─────────────────────────────────────────

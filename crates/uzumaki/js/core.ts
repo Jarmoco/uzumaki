@@ -123,7 +123,7 @@ interface Core {
   getWindowWidth(windowId: number): number | null;
   getWindowHeight(windowId: number): number | null;
   getWindowTitle(windowId: number): string | null;
-  getAncestorPath(windowId: number, nodeId: NodeId): any[]; // returns NodeId[]
+  getAncestorPath(windowId: number, nodeId: NodeId): NodeId[];
   getSelection(windowId: number): SelectionState | null;
   getSelectedText(windowId: number): string;
 }

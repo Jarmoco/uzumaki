@@ -53,7 +53,8 @@ interface ElementStyles {
   cursor?: string;
   display?: 'flex' | 'none' | 'block';
   scrollable?: boolean;
-  textSelect?: boolean;
+  // if true text inside this view can be selected
+  selectable?: boolean;
 }
 
 type PrefixedStyles<Prefix extends string> = {

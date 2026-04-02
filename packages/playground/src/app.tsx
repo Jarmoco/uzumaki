@@ -312,7 +312,7 @@ function Dashboard() {
 function TextSelectDemo() {
   return (
     <view
-      textSelect
+      selectable
       display="flex"
       flexDir="col"
       p="16"
@@ -326,6 +326,7 @@ function TextSelectDemo() {
       <p>
         Unlike a ghost or a slasher, the spiral 🌀 is an inevitable mathematical
         force.
+        <text color={TEXT_COLOR}>This part is not rendered correcty</text>
       </p>
       <p>
         Ito takes the Fibonacci sequence—usually a symbol of natural beauty—and
