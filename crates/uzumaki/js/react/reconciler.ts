@@ -1,4 +1,6 @@
 import ReactReconciler, { type EventPriority } from 'react-reconciler';
+import { isValidElement as isReactElement } from 'react';
+
 import { DefaultEventPriority } from 'react-reconciler/constants.js'; // fixme our runtime doesnt do probing for imports
 import type { JSX } from './jsx/runtime';
 import core, { PropKey } from '../core';
@@ -61,6 +63,13 @@ const PROP_NAME_TO_KEY: Record<string, number> = {
   selectable: PropKey.TextSelect,
 };
 
+const INTRINSIC_ELEMENTS = new Set([
+  'view',
+  'text',
+  'input',
+  'button',
+  /* 'canvas' */ // todo
+]);
 // ── Prop type categorization ─────────────────────────────────────────
 
 const LENGTH_KEYS = new Set([PropKey.W, PropKey.H, PropKey.MinW, PropKey.MinH]);
@@ -404,6 +413,7 @@ class ViewElement extends BaseElement {
 }
 
 import type { InputHandle } from './useInput';
+import { __DEV__ } from '../constants';
 
 const INPUT_ATTR_NAMES = new Set([
   'value',
@@ -642,14 +652,41 @@ function getWindowId(container: Container): number {
   return container.window.id;
 }
 
+/**
+ * Get text content of a <text> node. will throw an error if you nest a react element inside this
+ */
 function getTextContent(children: any): string {
   if (children == null) return '';
-  if (Array.isArray(children)) return children.join('');
+  if (Array.isArray(children)) {
+    return children
+      .map((child) => {
+        if (__DEV__ && isReactElement(child)) {
+          throw new Error(
+            `[uzumaki] <text> received a React element as a child (<${child.type}>). ` +
+              `Only strings and numbers are allowed inside <text>.`,
+          );
+        }
+        return child == null ? '' : String(child);
+      })
+      .join('');
+  }
+
+  if (__DEV__ && isReactElement(children)) {
+    throw new Error(
+      `[uzumaki] <text> received a React element as a child (<${children.type}>). ` +
+        `Only strings and numbers are allowed inside <text>.`,
+    );
+  }
+
   return String(children);
 }
 
+function isInputType(type: string): boolean {
+  return type === 'input';
+}
+
 function isTextType(type: string): boolean {
-  return type === 'text' || type === 'p';
+  return type === 'text';
 }
 
 function createElementInstance(
@@ -657,9 +694,16 @@ function createElementInstance(
   props: Record<string, any>,
   windowId: number,
 ): BaseElement {
+  if (!INTRINSIC_ELEMENTS.has(type)) {
+    throw new Error(
+      `[uzumaki] Unknown intrinsic element: <${type}>. Did you mean <view>?`,
+    );
+  }
+
   if (type === 'input') {
     return new InputElement(windowId, props);
   }
+
   if (isTextType(type)) {
     return new TextElement(
       windowId,
@@ -889,11 +933,13 @@ export function render(window: Window, element: JSX.Element) {
   roots.set(window.label, { root, container });
   reconciler.updateContainer(element, root, null, null);
 
+  function dispose() {
+    reconciler.updateContainer(null, root, null, null);
+    roots.delete(window.label);
+  }
+  // todo listen to window distroy event and dispose this container
   return {
-    dispose: () => {
-      reconciler.updateContainer(null, root, null, null);
-      roots.delete(window.label);
-    },
+    dispose,
   };
 }
 

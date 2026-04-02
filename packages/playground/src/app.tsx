@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useInput } from 'uzumaki-ui/react';
 import {
   NAV_ACTIVE,
@@ -14,6 +14,7 @@ import {
   PANEL,
   SUBTEXT,
 } from './styles';
+import { Window } from 'uzumaki-ui';
 
 function NavItem({
   label,
@@ -179,7 +180,6 @@ function Analytics() {
 function Dashboard() {
   const [count, setCount] = useState(0);
   const [showRecentActivity, setShowRecentActivity] = useState(true);
-
   return (
     <view
       scrollable
@@ -228,7 +228,15 @@ function Dashboard() {
             Increment
           </text>
         </view>
-        <view onClick={() => setShowRecentActivity((prev) => !prev)}>
+        <view
+          onClick={() => setShowRecentActivity((prev) => !prev)}
+          p="8"
+          px="16"
+          bg={NAV_ACTIVE}
+          rounded="6"
+          hover:bg={HOVER_BG}
+          active:bg={ACTIVE_BG}
+        >
           <text fontSize="16" color={ACCENT_BLUE}>
             Toggle Recent Activity
           </text>
@@ -297,6 +305,7 @@ function Dashboard() {
           </text>
         </view>
       )}
+      <Something />
 
       {/* Scroll demo */}
       <ScrollDemo />
@@ -309,6 +318,39 @@ function Dashboard() {
   );
 }
 
+function Something() {
+  return (
+    <view
+      selectable
+      display="flex"
+      flexDir="col"
+      p="16"
+      gap="12"
+      bg={PANEL}
+      rounded="8"
+      borderColor={BORDER}
+      border="1"
+    >
+      Unlike a ghost or a slasher, the spiral 🌀 is an inevitable mathematical
+      force.
+    </view>
+  );
+}
+
+function Code(props: React.PropsWithChildren<{}>) {
+  return (
+    <text
+      bg="#1a1a1a"
+      color={ACCENT_ORANGE}
+      border={2}
+      borderColor={BORDER}
+      rounded={5}
+      {...props}
+    >
+      {props.children}
+    </text>
+  );
+}
 function TextSelectDemo() {
   return (
     <view
@@ -323,15 +365,10 @@ function TextSelectDemo() {
       border="1"
     >
       <text fontSize={25}>Selectable text</text>
-      <p>
-        Unlike a ghost or a slasher, the spiral 🌀 is an inevitable mathematical
-        force.
-        <text color={TEXT_COLOR}>This part is not rendered correcty</text>
-      </p>
-      <p>
-        Ito takes the Fibonacci sequence—usually a symbol of natural beauty—and
-        turns it into a curse of obsession.
-      </p>
+      <view>
+        Adding a <Code>selectable</Code> prop to a <Code>view</Code> element
+        allows to select the text inside it
+      </view>
     </view>
   );
 }
