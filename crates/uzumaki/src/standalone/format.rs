@@ -1,7 +1,7 @@
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 /// Magic bytes used at the start and end of an embedded standalone payload.
@@ -38,18 +38,18 @@ pub struct StandalonePayload {
     pub blob: Vec<u8>,
 }
 
-/// Serialize a payload into the appended trailer form. The returned bytes
-/// should be appended directly to the base runtime binary.
+/// Serialize a self-contained payload that lives inside a real PE resource,
+/// Mach-O section, or ELF note section. No exe-offset bookkeeping needed —
+/// the container (resource/section) records its own size, so we only need
+/// magic markers for sanity-checking.
 ///
-/// Format appended to the host exe:
+/// Layout:
 ///   [MAGIC]
 ///   [metadata_len u64 LE][metadata_json]
 ///   [manifest_len u64 LE][manifest_json]
 ///   [blob_len u64 LE][blob]
-///   [payload_start u64 LE]    (absolute file offset of the first MAGIC)
 ///   [MAGIC]
-pub fn serialize_payload(
-    base_exe_len: u64,
+pub fn serialize_payload_bytes(
     metadata: &StandaloneMetadata,
     manifest: &[VfsEntry],
     blob: &[u8],
@@ -62,11 +62,8 @@ pub fn serialize_payload(
             + 8 + metadata_json.len()
             + 8 + manifest_json.len()
             + 8 + blob.len()
-            + 8 + MAGIC_BYTES.len(),
+            + MAGIC_BYTES.len(),
     );
-
-    // The payload_start written in the trailer is the absolute file offset at
-    // which we begin writing the first MAGIC — i.e. base_exe_len.
     out.extend_from_slice(MAGIC_BYTES);
     out.extend_from_slice(&(metadata_json.len() as u64).to_le_bytes());
     out.extend_from_slice(&metadata_json);
@@ -74,9 +71,46 @@ pub fn serialize_payload(
     out.extend_from_slice(&manifest_json);
     out.extend_from_slice(&(blob.len() as u64).to_le_bytes());
     out.extend_from_slice(blob);
-    out.extend_from_slice(&base_exe_len.to_le_bytes());
     out.extend_from_slice(MAGIC_BYTES);
     Ok(out)
+}
+
+/// Inverse of [`serialize_payload_bytes`]. Validates magic, parses the JSON
+/// chunks, and returns a [`StandalonePayload`].
+pub fn deserialize_payload_bytes(bytes: &[u8]) -> Result<StandalonePayload> {
+    let magic_len = MAGIC_BYTES.len();
+    if bytes.len() < magic_len * 2 {
+        return Err(anyhow!("payload too small"));
+    }
+    if &bytes[..magic_len] != MAGIC_BYTES {
+        return Err(anyhow!("payload missing leading magic"));
+    }
+    if &bytes[bytes.len() - magic_len..] != MAGIC_BYTES {
+        return Err(anyhow!("payload missing trailing magic"));
+    }
+
+    let mut cursor = std::io::Cursor::new(&bytes[magic_len..bytes.len() - magic_len]);
+    let metadata_json = read_len_prefixed(&mut cursor)?;
+    let manifest_json = read_len_prefixed(&mut cursor)?;
+    let blob = read_len_prefixed(&mut cursor)?;
+
+    let metadata: StandaloneMetadata = serde_json::from_slice(&metadata_json)
+        .context("parsing standalone metadata")?;
+    if metadata.format_version != FORMAT_VERSION {
+        return Err(anyhow!(
+            "unsupported standalone format version: {} (expected {})",
+            metadata.format_version,
+            FORMAT_VERSION
+        ));
+    }
+    let manifest: Vec<VfsEntry> = serde_json::from_slice(&manifest_json)
+        .context("parsing standalone manifest")?;
+
+    Ok(StandalonePayload {
+        metadata,
+        manifest,
+        blob,
+    })
 }
 
 /// Attempt to read a standalone payload from the given executable path.
@@ -139,16 +173,6 @@ fn read_len_prefixed<R: Read>(r: &mut R) -> Result<Vec<u8>> {
     let mut buf = vec![0u8; len];
     r.read_exact(&mut buf)?;
     Ok(buf)
-}
-
-/// Write `bytes` to the file at `path` (appending). Used by the packer.
-pub fn append_to_file(path: &Path, bytes: &[u8]) -> Result<()> {
-    let mut f = std::fs::OpenOptions::new()
-        .append(true)
-        .open(path)
-        .with_context(|| format!("opening {} for append", path.display()))?;
-    f.write_all(bytes)?;
-    Ok(())
 }
 
 /// Fast deterministic 64-bit hash (FNV-1a). Avoids extra dependencies. Used

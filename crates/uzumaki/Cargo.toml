@@ -18,6 +18,7 @@ unicode-segmentation = "1.11"
 pollster.workspace = true
 anyhow.workspace = true
 arboard = "3.6.1"
+libsui = "0.14"
 tokio = { version = "1", features = ["rt", "time"] }
 # Deno deps
 deno_runtime = { workspace = true, features = ["include_js_files_for_snapshotting"] }

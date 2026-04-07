@@ -2,9 +2,10 @@ use anyhow::{Context, Result, anyhow, bail};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use super::embed::write_payload_into_exe;
 use super::format::{
-    FORMAT_VERSION, StandaloneMetadata, VfsEntry, append_to_file, fnv1a_hex, read_payload_from_exe,
-    serialize_payload,
+    FORMAT_VERSION, StandaloneMetadata, VfsEntry, fnv1a_hex, read_payload_from_exe,
+    serialize_payload_bytes,
 };
 use super::vfs::walk_dir;
 
@@ -52,32 +53,17 @@ pub fn pack_app(opts: &PackOptions) -> Result<()> {
         });
     }
 
-    // Copy base binary to output path first, so we can append the payload.
-    // If base binary itself contains a previous payload, strip it so we write
-    // against the plain runtime bytes.
+    // Read the base runtime binary. If it itself happens to be a previously
+    // trailer-packed exe (v1 format), strip the trailer so we don't carry
+    // stale junk into the new container.
     let mut base_bytes = read_base_exe_without_payload(&opts.base_binary)?;
 
     // If this is a Windows PE, flip the subsystem to GUI so double-clicking
     // the packed executable doesn't pop a console window. This mirrors Deno's
-    // `set_windows_binary_to_gui` in cli/standalone/binary.rs.
+    // `set_windows_binary_to_gui` in cli/standalone/binary.rs and must happen
+    // *before* we hand the bytes to libsui for resource embedding.
     if is_pe(&base_bytes) {
         set_windows_binary_to_gui(&mut base_bytes)?;
-    }
-
-    if let Some(parent) = opts.output.parent() {
-        if !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("creating {}", parent.display()))?;
-        }
-    }
-    fs::write(&opts.output, &base_bytes)
-        .with_context(|| format!("writing {}", opts.output.display()))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(&opts.output)?.permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(&opts.output, perms)?;
     }
 
     // Compute extract hash from manifest + blob (stable, deterministic).
@@ -95,9 +81,10 @@ pub fn pack_app(opts: &PackOptions) -> Result<()> {
         extract_hash,
     };
 
-    let base_exe_len = fs::metadata(&opts.output)?.len();
-    let payload = serialize_payload(base_exe_len, &metadata, &manifest, &blob)?;
-    append_to_file(&opts.output, &payload)?;
+    // Build the self-contained payload bytes and embed them in a real
+    // PE resource / Mach-O section / ELF note section.
+    let payload = serialize_payload_bytes(&metadata, &manifest, &blob)?;
+    write_payload_into_exe(base_bytes, payload, &opts.output)?;
 
     println!(
         "packed {} file(s) into {}",

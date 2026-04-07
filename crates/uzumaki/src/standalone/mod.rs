@@ -1,4 +1,5 @@
 pub mod boot;
+pub mod embed;
 pub mod format;
 pub mod pack;
 pub mod vfs;

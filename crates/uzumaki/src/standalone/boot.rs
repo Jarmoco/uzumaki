@@ -2,7 +2,8 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use super::format::{StandalonePayload, read_payload_from_exe};
+use super::embed::read_payload_from_current_exe;
+use super::format::{StandalonePayload, deserialize_payload_bytes, read_payload_from_exe};
 use super::vfs::extract;
 
 #[derive(Debug, Clone)]
@@ -39,7 +40,7 @@ impl LaunchMode {
 /// mode. Otherwise return `Ok(None)` so the caller can fall back to dev mode.
 pub fn detect_and_prepare() -> Result<Option<LaunchMode>> {
     let exe = std::env::current_exe().context("resolving current_exe")?;
-    let Some(payload) = read_payload_from_exe(&exe)? else {
+    let Some(payload) = load_payload(&exe)? else {
         return Ok(None);
     };
 
@@ -61,6 +62,35 @@ pub fn detect_and_prepare() -> Result<Option<LaunchMode>> {
         entry_path,
         extraction_dir,
     }))
+}
+
+/// Resolve the embedded payload for the current executable.
+///
+/// Tries the production path first — a real PE resource / Mach-O section /
+/// ELF note section read via libsui — and falls back to the legacy v1
+/// trailer-append format so existing packed binaries keep booting during
+/// the transition.
+fn load_payload(exe: &Path) -> Result<Option<StandalonePayload>> {
+    match read_payload_from_current_exe() {
+        Ok(Some(bytes)) => match deserialize_payload_bytes(&bytes) {
+            Ok(payload) => return Ok(Some(payload)),
+            Err(e) => {
+                eprintln!(
+                    "uzumaki: native section present but failed to deserialize: {e}; \
+                     falling back to legacy trailer reader"
+                );
+            }
+        },
+        Ok(None) => {}
+        Err(e) => {
+            eprintln!(
+                "uzumaki: native section lookup failed: {e}; \
+                 falling back to legacy trailer reader"
+            );
+        }
+    }
+
+    read_payload_from_exe(exe)
 }
 
 fn choose_extraction_dir(exe: &Path, payload: &StandalonePayload) -> Result<PathBuf> {
