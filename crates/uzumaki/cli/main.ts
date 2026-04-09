@@ -4,6 +4,37 @@ import { fileURLToPath } from 'bun';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+type UzumakiConfig = {
+  build?: {
+    command?: string;
+  };
+  pack?: {
+    dist?: string;
+    entry?: string;
+    output?: string;
+    name?: string;
+    baseBinary?: string;
+  };
+};
+
+type BuildCliOptions = {
+  configPath?: string;
+  buildCommand?: string;
+  dist?: string;
+  entry?: string;
+  output?: string;
+  name?: string;
+  baseBinary?: string;
+  shouldRunBuild: boolean;
+};
+
+type LoadedConfig = {
+  configPath: string;
+  configDir: string;
+  config: UzumakiConfig;
+};
 
 function color(text: string, value: string) {
   const start = Bun.color(value, 'ansi') ?? '';
@@ -21,6 +52,13 @@ function dim(text: string) {
 
 const args = process.argv.slice(2);
 
+const CONFIG_FILENAMES = [
+  'uzumaki.config.ts',
+  'uzumaki.config.js',
+  'uzumaki.config.mjs',
+  'uzumaki.config.json',
+];
+
 function help() {
   const commands = [
     {
@@ -29,9 +67,9 @@ function help() {
       args: './index.tsx [...args]',
     },
     {
-      name: 'pack',
-      desc: 'Package a bundled app into a standalone executable',
-      args: '[dist]',
+      name: 'build',
+      desc: 'Build an app from uzumaki.config.* and package it',
+      args: '[--config <path>] [--no-build]',
     },
   ];
 
@@ -54,6 +92,8 @@ function help() {
       '',
       `${bold('Commands:')}`,
       commandLines,
+      '',
+      `${bold('Build config:')} ${dim('uzumaki.config.ts | .js | .mjs | .json')}`,
     ].join('\n'),
   );
 }
@@ -155,6 +195,283 @@ async function run(entryPoint: string, extraArgs: string[] = []) {
   return await child.exited;
 }
 
+function parseBuildArgs(rawArgs: string[]): BuildCliOptions {
+  const options: BuildCliOptions = {
+    shouldRunBuild: true,
+  };
+
+  for (let i = 0; i < rawArgs.length; i += 1) {
+    const arg = rawArgs[i]!;
+    const next = rawArgs[i + 1];
+
+    switch (arg) {
+      case '--config':
+        if (!next) {
+          throw new Error('--config requires a path');
+        }
+        options.configPath = next;
+        i += 1;
+        break;
+      case '--build-command':
+        if (!next) {
+          throw new Error('--build-command requires a value');
+        }
+        options.buildCommand = next;
+        i += 1;
+        break;
+      case '--dist':
+        if (!next) {
+          throw new Error('--dist requires a value');
+        }
+        options.dist = next;
+        i += 1;
+        break;
+      case '--entry':
+        if (!next) {
+          throw new Error('--entry requires a value');
+        }
+        options.entry = next;
+        i += 1;
+        break;
+      case '--output':
+      case '-o':
+        if (!next) {
+          throw new Error(`${arg} requires a value`);
+        }
+        options.output = next;
+        i += 1;
+        break;
+      case '--name':
+        if (!next) {
+          throw new Error('--name requires a value');
+        }
+        options.name = next;
+        i += 1;
+        break;
+      case '--base-binary':
+        if (!next) {
+          throw new Error('--base-binary requires a value');
+        }
+        options.baseBinary = next;
+        i += 1;
+        break;
+      case '--no-build':
+        options.shouldRunBuild = false;
+        break;
+      default:
+        throw new Error(`unknown build arg: ${arg}`);
+    }
+  }
+
+  return options;
+}
+
+function findConfigPath(startDir: string) {
+  let currentDir = startDir;
+
+  while (true) {
+    for (const filename of CONFIG_FILENAMES) {
+      const candidate = path.join(currentDir, filename);
+      if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+        return candidate;
+      }
+    }
+
+    const parent = path.dirname(currentDir);
+    if (parent === currentDir) {
+      return null;
+    }
+    currentDir = parent;
+  }
+}
+
+async function loadConfig(configPath: string): Promise<UzumakiConfig> {
+  const ext = path.extname(configPath);
+
+  if (ext === '.json') {
+    const raw = fs.readFileSync(configPath, 'utf8');
+    return JSON.parse(raw) as UzumakiConfig;
+  }
+
+  const moduleUrl = pathToFileURL(configPath);
+  moduleUrl.searchParams.set('t', `${Date.now()}`);
+  const mod = (await import(moduleUrl.href)) as {
+    default?: UzumakiConfig;
+  } & UzumakiConfig;
+
+  return (mod.default ?? mod) as UzumakiConfig;
+}
+
+async function resolveLoadedConfig(
+  explicitConfigPath?: string,
+): Promise<LoadedConfig> {
+  const configPath = explicitConfigPath
+    ? path.resolve(process.cwd(), explicitConfigPath)
+    : findConfigPath(process.cwd());
+
+  if (!configPath) {
+    throw new Error(
+      `could not find ${CONFIG_FILENAMES.join(', ')} from ${process.cwd()}`,
+    );
+  }
+
+  if (!fs.existsSync(configPath)) {
+    throw new Error(`config file not found: ${configPath}`);
+  }
+
+  const config = await loadConfig(configPath);
+  if (!config || typeof config !== 'object' || Array.isArray(config)) {
+    throw new Error(`config file must export an object: ${configPath}`);
+  }
+
+  return {
+    configPath,
+    configDir: path.dirname(configPath),
+    config,
+  };
+}
+
+function resolveFromConfigDir(configDir: string, value: string) {
+  if (path.isAbsolute(value)) {
+    return value;
+  }
+
+  return path.resolve(configDir, value);
+}
+
+async function runShellCommand(command: string, cwd: string) {
+  const shellCmd =
+    process.platform === 'win32'
+      ? ['cmd.exe', '/d', '/s', '/c', command]
+      : ['sh', '-lc', command];
+
+  const child = Bun.spawn(shellCmd, {
+    cwd,
+    stdin: 'inherit',
+    stdout: 'inherit',
+    stderr: 'inherit',
+  });
+
+  return await child.exited;
+}
+
+async function buildApp(rawArgs: string[]) {
+  const binaryPath = resolveRuntimeBinaryPath();
+  if (!fs.existsSync(binaryPath)) {
+    console.error(
+      [
+        color('error:', '#ef4444'),
+        `native binary not found at ${dim(binaryPath)}`,
+      ].join(' '),
+    );
+    return 1;
+  }
+
+  let options: BuildCliOptions;
+  try {
+    options = parseBuildArgs(rawArgs);
+  } catch (error) {
+    console.error(`${color('error:', '#ef4444')} ${(error as Error).message}`);
+    console.error(
+      `usage: ${dim(
+        'uzumaki build [--config <path>] [--no-build] [--build-command <cmd>] [--dist <dir>] [--entry <rel>] [--output <exe>]',
+      )}`,
+    );
+    return 1;
+  }
+
+  let loadedConfig: LoadedConfig;
+  try {
+    loadedConfig = await resolveLoadedConfig(options.configPath);
+  } catch (error) {
+    console.error(`${color('error:', '#ef4444')} ${(error as Error).message}`);
+    return 1;
+  }
+
+  const buildCommand =
+    options.buildCommand ?? loadedConfig.config.build?.command ?? null;
+
+  if (options.shouldRunBuild && buildCommand) {
+    const exitCode = await runShellCommand(
+      buildCommand,
+      loadedConfig.configDir,
+    );
+    if (exitCode !== 0) {
+      return exitCode;
+    }
+  }
+
+  const distValue = options.dist ?? loadedConfig.config.pack?.dist;
+  const entryValue = options.entry ?? loadedConfig.config.pack?.entry;
+  const outputValue = options.output ?? loadedConfig.config.pack?.output;
+  const nameValue = options.name ?? loadedConfig.config.pack?.name;
+  const baseBinaryValue =
+    options.baseBinary ?? loadedConfig.config.pack?.baseBinary;
+
+  if (!distValue) {
+    console.error(`${color('error:', '#ef4444')} missing pack.dist`);
+    return 1;
+  }
+
+  if (!entryValue) {
+    console.error(`${color('error:', '#ef4444')} missing pack.entry`);
+    return 1;
+  }
+
+  if (!outputValue) {
+    console.error(`${color('error:', '#ef4444')} missing pack.output`);
+    return 1;
+  }
+
+  const distPath = resolveFromConfigDir(loadedConfig.configDir, distValue);
+  const outputPath = resolveFromConfigDir(loadedConfig.configDir, outputValue);
+  const entryPath = path.join(distPath, entryValue);
+  const baseBinaryPath = baseBinaryValue
+    ? resolveFromConfigDir(loadedConfig.configDir, baseBinaryValue)
+    : null;
+
+  if (!fs.existsSync(distPath)) {
+    console.error(
+      `${color('error:', '#ef4444')} dist directory not found: ${distPath}`,
+    );
+    return 1;
+  }
+
+  if (!fs.existsSync(entryPath)) {
+    console.error(
+      `${color('error:', '#ef4444')} entry file not found: ${entryPath}`,
+    );
+    return 1;
+  }
+
+  const packArgs = [
+    'pack',
+    '--dist',
+    distPath,
+    '--entry',
+    entryValue,
+    '--output',
+    outputPath,
+  ];
+
+  if (nameValue) {
+    packArgs.push('--name', nameValue);
+  }
+
+  if (baseBinaryPath) {
+    packArgs.push('--base-binary', baseBinaryPath);
+  }
+
+  const child = Bun.spawn([binaryPath, ...packArgs], {
+    cwd: loadedConfig.configDir,
+    stdin: 'inherit',
+    stdout: 'inherit',
+    stderr: 'inherit',
+  });
+
+  return await child.exited;
+}
+
 async function main() {
   if (!args.length) {
     help();
@@ -173,28 +490,11 @@ async function main() {
       return await run(entryPoint, args.slice(2));
     }
 
-    case 'pack': {
-      const binaryPath = resolveRuntimeBinaryPath();
-      if (!fs.existsSync(binaryPath)) {
-        console.error(
-          [
-            color('error:', '#ef4444'),
-            `native binary not found at ${dim(binaryPath)}`,
-          ].join(' '),
-        );
-        return 1;
-      }
-      const child = Bun.spawn([binaryPath, 'pack', ...args.slice(1)], {
-        stdin: 'inherit',
-        stdout: 'inherit',
-        stderr: 'inherit',
-      });
-      return await child.exited;
-    }
+    case 'build':
+      return await buildApp(args.slice(1));
 
-    default: {
+    default:
       return await run(cmd, args.slice(1));
-    }
   }
 }
 
