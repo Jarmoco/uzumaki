@@ -22,3 +22,4 @@ ureq.workspace = true
 zip.workspace = true
 tempfile.workspace = true
 libsui = "0.14"
+dirs.workspace = true

@@ -100,66 +100,8 @@ fn choose_extraction_dir(exe: &Path, payload: &StandalonePayload) -> Result<Path
         .and_then(|s| s.to_str())
         .unwrap_or("uzumaki_app");
 
-    // Try next-to-exe first: ./.<exe>/<hash>/
-    if let Some(parent) = exe.parent() {
-        let dir = parent.join(format!(".{}", exe_stem)).join(hash);
-        if can_use_dir(&dir) {
-            return Ok(dir);
-        }
-    }
-
-    // Fall back to a platform-appropriate local data directory.
-    let base = local_data_dir().unwrap_or_else(std::env::temp_dir);
+    let base = dirs::cache_dir().unwrap_or_else(std::env::temp_dir);
     Ok(base.join("uzumaki").join(exe_stem).join(hash))
-}
-
-fn can_use_dir(path: &Path) -> bool {
-    if let Err(e) = fs::create_dir_all(path) {
-        eprintln!(
-            "uzumaki: cannot create extraction dir {}: {}",
-            path.display(),
-            e
-        );
-        return false;
-    }
-    // Probe writability by creating and removing a tiny file.
-    let probe = path.join(".probe");
-    match fs::write(&probe, b"") {
-        Ok(()) => {
-            let _ = fs::remove_file(&probe);
-            true
-        }
-        Err(_) => false,
-    }
-}
-
-fn local_data_dir() -> Option<PathBuf> {
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(v) = std::env::var("LOCALAPPDATA") {
-            return Some(PathBuf::from(v));
-        }
-    }
-    #[cfg(target_os = "macos")]
-    {
-        if let Ok(home) = std::env::var("HOME") {
-            return Some(
-                PathBuf::from(home)
-                    .join("Library")
-                    .join("Application Support"),
-            );
-        }
-    }
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        if let Ok(v) = std::env::var("XDG_DATA_HOME") {
-            return Some(PathBuf::from(v));
-        }
-        if let Ok(home) = std::env::var("HOME") {
-            return Some(PathBuf::from(home).join(".local").join("share"));
-        }
-    }
-    None
 }
 
 fn ensure_extracted(payload: &StandalonePayload, extraction_dir: &Path) -> Result<()> {

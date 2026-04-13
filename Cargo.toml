@@ -23,6 +23,7 @@ clap = { version = "4", features = ["derive", "color"] }
 ureq = "3"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 tempfile = "3"
+dirs = "6"
 tokio = "1"
 
 
