@@ -1,4 +1,7 @@
 {
+  "productName": "playground",
+  "version": "0.1.0",
+  "identifier": "com.uzumaki.playground",
   "build": {
     "command": "bun build src/index.tsx --target node --outdir dist --minify"
   },

@@ -13,6 +13,10 @@ const GITHUB_REPO: &str = "golok727/uzumaki";
 
 #[derive(Debug, serde::Deserialize)]
 pub struct UzumakiConfig {
+    #[serde(rename = "productName")]
+    pub product_name: String,
+    pub version: String,
+    pub identifier: String,
     #[serde(default)]
     pub build: BuildConfig,
     #[serde(default)]
@@ -85,24 +89,6 @@ pub enum Commands {
         #[arg(long)]
         no_build: bool,
     },
-    /// Low-level: pack a dist folder into a standalone executable
-    Pack {
-        /// Directory containing built JS files
-        #[arg(long)]
-        dist: String,
-        /// Relative entry point inside dist
-        #[arg(long)]
-        entry: String,
-        /// Output executable path
-        #[arg(long, short)]
-        output: String,
-        /// Application name
-        #[arg(long)]
-        name: Option<String>,
-        /// Base binary to embed into
-        #[arg(long)]
-        base_binary: Option<String>,
-    },
     /// Upgrade uzumaki to the latest version
     Upgrade {
         /// Specific version to install (e.g. 0.2.0)
@@ -130,7 +116,7 @@ fn clap_styles() -> clap::builder::Styles {
 // ─── Command implementations ───────────────────────────────────────────────
 
 /// Known subcommand names so we can distinguish `uzumaki build` from `uzumaki app.tsx`.
-const KNOWN_SUBCOMMANDS: &[&str] = &["run", "build", "pack", "upgrade", "help"];
+const KNOWN_SUBCOMMANDS: &[&str] = &["run", "build", "upgrade", "help"];
 
 pub fn run_cli() -> Result<Option<standalone::LaunchMode>> {
     let raw_args: Vec<String> = std::env::args().collect();
@@ -143,7 +129,7 @@ pub fn run_cli() -> Result<Option<standalone::LaunchMode>> {
     }
 
     // If the first arg after the binary name looks like a file (not a known subcommand),
-    // treat it as `uzumaki run <file> ...` — same as bun/deno.
+    // treat it as `uzumaki run <file> ...`
     let cli = if !KNOWN_SUBCOMMANDS.contains(&raw_args[1].as_str()) && !raw_args[1].starts_with('-')
     {
         let mut patched = vec![raw_args[0].clone(), "run".to_string()];
@@ -157,22 +143,6 @@ pub fn run_cli() -> Result<Option<standalone::LaunchMode>> {
         Commands::Run { entry, args: _ } => Ok(Some(resolve_run(&entry)?)),
         Commands::Build { config, no_build } => {
             cmd_build(config.as_deref(), no_build)?;
-            Ok(None)
-        }
-        Commands::Pack {
-            dist,
-            entry,
-            output,
-            name,
-            base_binary,
-        } => {
-            cmd_pack(
-                &dist,
-                &entry,
-                &output,
-                name.as_deref(),
-                base_binary.as_deref(),
-            )?;
             Ok(None)
         }
         Commands::Upgrade { version } => {
@@ -245,13 +215,11 @@ fn cmd_build(config_path: Option<&str>, no_build: bool) -> Result<()> {
 
     let dist_path = resolve_from(&config_dir, dist);
     let output_path = normalize_output_extension(&resolve_from(&config_dir, output_raw));
-    let app_name = config.pack.name.clone().unwrap_or_else(|| {
-        output_path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("uzumaki-app")
-            .to_string()
-    });
+    let app_name = config
+        .pack
+        .name
+        .clone()
+        .unwrap_or_else(|| config.product_name.clone());
     let base_binary = match &config.pack.base_binary {
         Some(b) => resolve_from(&config_dir, b),
         None => std::env::current_exe()?,
@@ -269,37 +237,9 @@ fn cmd_build(config_path: Option<&str>, no_build: bool) -> Result<()> {
         output: output_path,
         app_name,
         base_binary,
-    })
-}
-
-fn cmd_pack(
-    dist: &str,
-    entry: &str,
-    output: &str,
-    name: Option<&str>,
-    base_binary: Option<&str>,
-) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let dist_path = resolve_from(&cwd, dist);
-    let output_path = normalize_output_extension(&resolve_from(&cwd, output));
-    let base = match base_binary {
-        Some(b) => resolve_from(&cwd, b),
-        None => std::env::current_exe()?,
-    };
-    let app_name = name.map(|s| s.to_string()).unwrap_or_else(|| {
-        output_path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("uzumaki-app")
-            .to_string()
-    });
-
-    standalone::pack::pack_app(&standalone::pack::PackOptions {
-        dist_dir: dist_path,
-        entry_rel: entry.to_string(),
-        output: output_path,
-        app_name,
-        base_binary: base,
+        identifier: config.identifier,
+        version: config.version,
+        product_name: config.product_name,
     })
 }
 
@@ -461,7 +401,6 @@ fn normalize_output_extension(path: &Path) -> PathBuf {
             PathBuf::from(format!("{s}.exe"))
         }
     } else if cfg!(target_os = "macos") {
-        // Strip wrong extensions, no extension needed on macOS
         let cleaned = s.trim_end_matches(".exe").trim_end_matches(".app");
         PathBuf::from(cleaned.to_string())
     } else {

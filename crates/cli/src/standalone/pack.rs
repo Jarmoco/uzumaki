@@ -15,6 +15,9 @@ pub struct PackOptions {
     pub output: PathBuf,
     pub app_name: String,
     pub base_binary: PathBuf,
+    pub identifier: String,
+    pub version: String,
+    pub product_name: String,
 }
 
 pub fn pack_app(opts: &PackOptions) -> Result<()> {
@@ -84,12 +87,26 @@ pub fn pack_app(opts: &PackOptions) -> Result<()> {
     // Build the self-contained payload bytes and embed them in a real
     // PE resource / Mach-O section / ELF note section.
     let payload = serialize_payload_bytes(&metadata, &manifest, &blob)?;
-    write_payload_into_exe(base_bytes, payload, &opts.output)?;
+
+    let final_output = if cfg!(target_os = "macos") {
+        create_macos_app_bundle(
+            base_bytes,
+            payload,
+            &opts.output,
+            &opts.app_name,
+            &opts.identifier,
+            &opts.version,
+            &opts.product_name,
+        )?
+    } else {
+        write_payload_into_exe(base_bytes, payload, &opts.output)?;
+        opts.output.clone()
+    };
 
     println!(
         "packed {} file(s) into {}",
         files.len(),
-        opts.output.display()
+        final_output.display()
     );
     Ok(())
 }
@@ -156,6 +173,88 @@ fn set_windows_binary_to_gui(bin: &mut [u8]) -> Result<()> {
     }
     bin[subsystem_off..subsystem_off + 2].copy_from_slice(&2u16.to_le_bytes());
     Ok(())
+}
+
+/// Create a macOS `.app` bundle at `output` (ensuring it ends with `.app`).
+///
+/// Layout:
+///   MyApp.app/
+///     Contents/
+///       Info.plist
+///       MacOS/
+///         <app_name>   ← the packed Mach-O binary
+///       Resources/
+fn create_macos_app_bundle(
+    base_bytes: Vec<u8>,
+    payload: Vec<u8>,
+    output: &Path,
+    app_name: &str,
+    identifier: &str,
+    version: &str,
+    product_name: &str,
+) -> Result<PathBuf> {
+    let app_bundle = ensure_app_extension(output);
+    let contents = app_bundle.join("Contents");
+    let macos_dir = contents.join("MacOS");
+    let resources = contents.join("Resources");
+
+    fs::create_dir_all(&macos_dir).with_context(|| format!("creating {}", macos_dir.display()))?;
+    fs::create_dir_all(&resources)?;
+
+    let binary_path = macos_dir.join(app_name);
+    write_payload_into_exe(base_bytes, payload, &binary_path)?;
+
+    let info_plist = generate_info_plist(app_name, identifier, version, product_name);
+    fs::write(contents.join("Info.plist"), info_plist)?;
+
+    Ok(app_bundle)
+}
+
+fn ensure_app_extension(path: &Path) -> PathBuf {
+    let s = path.to_string_lossy();
+    if s.ends_with(".app") {
+        path.to_path_buf()
+    } else {
+        PathBuf::from(format!("{s}.app"))
+    }
+}
+
+fn generate_info_plist(
+    app_name: &str,
+    identifier: &str,
+    version: &str,
+    product_name: &str,
+) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>{product_name}</string>
+    <key>CFBundleDisplayName</key>
+    <string>{product_name}</string>
+    <key>CFBundleIdentifier</key>
+    <string>{identifier}</string>
+    <key>CFBundleExecutable</key>
+    <string>{app_name}</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleVersion</key>
+    <string>{version}</string>
+    <key>CFBundleShortVersionString</key>
+    <string>{version}</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>11.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSSupportsAutomaticGraphicsSwitching</key>
+    <true/>
+</dict>
+</plist>"#
+    )
 }
 
 /// Returns the raw bytes of `base` with any existing embedded payload stripped.
