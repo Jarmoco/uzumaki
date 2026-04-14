@@ -554,7 +554,7 @@ pub fn op_set_f32_prop(
                 PropKey::BorderBottom => style.border_widths.bottom = v,
                 PropKey::BorderLeft => style.border_widths.left = v,
                 PropKey::Opacity => style.opacity = v,
-                PropKey::Visible => {
+                PropKey::Visibility => {
                     style.visibility = if v > 0.5 {
                         Visibility::Visible
                     } else {

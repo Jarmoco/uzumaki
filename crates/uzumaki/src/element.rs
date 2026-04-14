@@ -13,7 +13,7 @@ use crate::elements::input::{InputRenderInfo, compute_selection_rects};
 use crate::input::{BaseInputState, RangeProvider};
 use crate::interactivity::{HitTestState, HitboxStore, Interactivity};
 use crate::selection::{DomSelection, SelectionRange};
-use crate::style::{Bounds, Color, Style};
+use crate::style::{Bounds, Color, Style, Visibility};
 use crate::text::TextRenderer;
 
 #[derive(Debug, Clone)]
@@ -811,6 +811,10 @@ impl Dom {
                         )
                     };
                     // immutable borrow of self.nodes is now dropped
+
+                    if computed_style.visibility == Visibility::Hidden {
+                        continue;
+                    }
 
                     let Ok(layout) = self.taffy.layout(taffy_node) else {
                         continue;
