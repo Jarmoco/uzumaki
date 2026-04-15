@@ -3,11 +3,12 @@ use slab::Slab;
 use crate::{
     cursor::UzCursorIcon,
     element::{
-        DomRangeProvider, ElementData, ElementNode, InputState, Node, NodeContext, ScrollDragState,
-        ScrollThumbRect, SharedSelectionState, TextNode, TextRunEntry, TextSelectRun, UzNodeId,
-        render,
+        ElementData, ElementNode, Node, NodeContext, ScrollDragState, ScrollThumbRect, TextNode,
+        TextRunEntry, TextSelectRun, UzNodeId, render,
     },
+    input::InputState,
     interactivity::{HitTestState, HitboxStore},
+    selection::TextSelection,
     style::UzStyle,
     text::TextRenderer,
 };
@@ -40,8 +41,9 @@ pub struct UIState {
     /// Scroll lock: when scrolling starts, lock to that node for a short duration
     /// to prevent inner scrollable views from stealing wheel events mid-scroll.
     pub scroll_lock: Option<(UzNodeId, std::time::Instant)>,
-    /// Current text selection within a textSelect view.
-    pub selection: SharedSelectionState,
+    /// Current text selection within a textSelect view. `root == None` means
+    /// there is no active view selection
+    pub text_selection: TextSelection,
     /// textSelect root being dragged for selection.
     pub dragging_view_selection: Option<UzNodeId>,
     /// Text runs for textSelect subtrees, rebuilt each frame.
@@ -75,7 +77,7 @@ impl UIState {
             scroll_thumbs: Vec::new(),
             scroll_drag: None,
             scroll_lock: None,
-            selection: SharedSelectionState::new(),
+            text_selection: TextSelection::default(),
             dragging_view_selection: None,
             selectable_text_runs: Vec::new(),
         }
@@ -187,9 +189,7 @@ impl UIState {
         let taffy_style = style.to_taffy();
         let taffy_node = self.taffy.new_leaf(taffy_style).unwrap();
         let font_size = style.text.font_size;
-        let is = InputState::new_single_line(DomRangeProvider {
-            selection: self.selection.clone(),
-        });
+        let is = InputState::new_single_line();
 
         let node_id = self.nodes.insert(Node::new(
             taffy_node,
@@ -301,10 +301,8 @@ impl UIState {
         {
             self.scroll_lock = None;
         }
-        if let Some(sel) = self.selection.get()
-            && sel.root == id
-        {
-            self.selection.clear();
+        if self.text_selection.root == Some(id) {
+            self.text_selection.clear();
         }
 
         self.hit_state.hovered_nodes.retain(|&n| n != id);

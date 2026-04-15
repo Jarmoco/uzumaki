@@ -2,7 +2,6 @@ use std::time::Instant;
 use winit::keyboard::{Key, NamedKey};
 
 use crate::{selection::SelectionRange, text_model::TextModel};
-// ── EditEvent ────────────────────────────────────────────────────────
 
 #[derive(Clone, Debug)]
 pub enum EditKind {
@@ -21,8 +20,6 @@ pub struct EditEvent {
     pub inserted: Option<String>,
 }
 
-// ── KeyResult ────────────────────────────────────────────────────────
-
 pub enum KeyResult {
     Edit(EditEvent),
     Blur,
@@ -30,33 +27,10 @@ pub enum KeyResult {
     Ignored,
 }
 
-// ── InputState ───────────────────────────────────────────────────────
-// Owns selection, delegates buffer mutations to TextModel.
-// Handles key events, movement, and presentation concerns.
-
-pub trait RangeProvider {
-    fn get_range(&self) -> SelectionRange;
-    fn set_range(&mut self, range: SelectionRange);
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct DefaultRangeProvider {
-    pub range: SelectionRange,
-}
-
-impl RangeProvider for DefaultRangeProvider {
-    fn get_range(&self) -> SelectionRange {
-        self.range
-    }
-
-    fn set_range(&mut self, range: SelectionRange) {
-        self.range = range
-    }
-}
-
-pub struct BaseInputState<TRangeProvider: RangeProvider> {
+// todo use parley editor
+pub struct InputState {
     pub model: TextModel,
-    range_provider: TRangeProvider,
+    range: SelectionRange,
     pub placeholder: String,
     pub scroll_offset: f32,
     pub scroll_offset_y: f32,
@@ -72,20 +46,17 @@ pub struct BaseInputState<TRangeProvider: RangeProvider> {
     pub sticky_x: Option<f32>,
 }
 
-impl<T> Default for BaseInputState<T>
-where
-    T: RangeProvider + Default,
-{
+impl Default for InputState {
     fn default() -> Self {
-        Self::new(T::default())
+        Self::new()
     }
 }
 
-impl<TRangeProvider: RangeProvider> BaseInputState<TRangeProvider> {
-    pub fn new(range_provider: TRangeProvider) -> Self {
+impl InputState {
+    pub fn new() -> Self {
         Self {
             model: TextModel::new(),
-            range_provider,
+            range: SelectionRange::default(),
             placeholder: String::new(),
             scroll_offset: 0.0,
             scroll_offset_y: 0.0,
@@ -99,49 +70,38 @@ impl<TRangeProvider: RangeProvider> BaseInputState<TRangeProvider> {
         }
     }
 
-    pub fn new_single_line(range_provider: TRangeProvider) -> Self {
-        let mut this = Self::new(range_provider);
+    pub fn new_single_line() -> Self {
+        let mut this = Self::new();
         this.multiline = false;
         this
     }
 
-    pub fn set_range_provider(&mut self, provider: TRangeProvider) {
-        self.range_provider = provider;
-    }
-
     pub fn range(&self) -> SelectionRange {
-        self.range_provider.get_range()
+        self.range
     }
 
     pub fn update_range<R>(&mut self, update: impl FnOnce(&mut SelectionRange) -> R) -> R {
-        let mut range = self.range();
-        let res = update(&mut range);
-        self.set_range(range);
-        res
+        update(&mut self.range)
     }
 
     #[inline]
     fn set_range(&mut self, range: SelectionRange) {
-        self.range_provider.set_range(range);
+        self.range = range;
     }
 
     pub fn set_cursor(&mut self, pos: usize) {
-        let mut range = self.range();
-        range.set_cursor(pos);
-        self.set_range(range);
+        self.range.set_cursor(pos);
     }
 
     /// Delete the current selection. Returns true if something was deleted.
     fn delete_selection(&mut self) -> bool {
-        let mut range = self.range_provider.get_range();
-        if range.is_collapsed() {
+        if self.range.is_collapsed() {
             return false;
         }
-        let start = range.start();
-        let end = range.end();
+        let start = self.range.start();
+        let end = self.range.end();
         self.model.delete_range(start, end);
-        range.set_cursor(start);
-        self.set_range(range);
+        self.range.set_cursor(start);
         true
     }
 
@@ -754,13 +714,9 @@ impl<TRangeProvider: RangeProvider> BaseInputState<TRangeProvider> {
     }
 }
 
-// ── Tests ────────────────────────────────────────────────────────────
-
 #[cfg(test)]
 mod tests {
-    use super::{DefaultRangeProvider, SelectionRange};
-    type InputState = super::BaseInputState<DefaultRangeProvider>;
-
+    use super::*;
     fn input(text: &str) -> InputState {
         let mut is = InputState::default();
         is.set_value(text.to_string());
@@ -778,8 +734,6 @@ mod tests {
         is.set_range(SelectionRange::new(anchor, active));
         is
     }
-
-    // ── Insert ───────────────────────────────────────────────────────
 
     #[test]
     fn insert_text_basic() {

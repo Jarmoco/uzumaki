@@ -1,5 +1,5 @@
 use crate::cursor::UzCursorIcon;
-use crate::input::BaseInputState;
+use crate::input::InputState;
 use crate::interactivity::Interactivity;
 use crate::style::{Bounds, TextSelectable, UzStyle};
 
@@ -9,10 +9,7 @@ pub mod selection;
 pub mod text;
 pub mod view;
 
-pub use selection::{DomRangeProvider, SharedSelectionState};
 use vello::kurbo::Affine;
-
-pub type InputState = BaseInputState<DomRangeProvider>;
 
 pub type UzNodeId = usize;
 

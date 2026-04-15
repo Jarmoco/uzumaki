@@ -2,7 +2,6 @@ use deno_core::*;
 
 use crate::app::{SharedAppState, with_state};
 use crate::element::UzNodeId;
-use crate::selection::{DomSelection, SelectionRange};
 use crate::style::*;
 
 #[op2(fast)]
@@ -266,10 +265,7 @@ pub fn op_focus_input(state: &mut OpState, #[smi] window_id: u32, #[smi] node_id
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
         let entry = s.windows.get_mut(&window_id).expect("window not found");
-        entry.dom.set_selection(DomSelection {
-            root: nid,
-            range: SelectionRange::default(),
-        });
+        entry.dom.focus_input(nid);
     });
 }
 
@@ -315,13 +311,16 @@ pub fn op_get_selection(state: &mut OpState, #[smi] window_id: u32) -> serde_jso
     with_state(&app_state, |s| {
         let entry = s.windows.get(&window_id).expect("window not found");
         let dom = &entry.dom;
-        let Some(sel) = dom.selection() else {
+        let Some(sel) = dom.get_selection() else {
+            return serde_json::Value::Null;
+        };
+        let Some(root) = sel.root else {
             return serde_json::Value::Null;
         };
         let run_length = dom.selection_run_length().unwrap_or(0);
         let text = dom.selected_text();
         serde_json::to_value(SelectionState {
-            root_node_id: sel.root as u32,
+            root_node_id: root as u32,
             anchor_offset: sel.anchor(),
             active_offset: sel.active(),
             start: sel.start(),

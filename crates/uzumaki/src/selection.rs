@@ -31,20 +31,28 @@ impl SelectionRange {
     }
 }
 
-#[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize)]
-pub struct DomSelection {
-    /// The textSelect root that owns this selection.
-    pub root: UzNodeId,
+/// Text selection for non-input elements (textSelect views).
+///
+/// `root == None` means no active view selection. Input nodes own their own
+/// selection internally and do not populate this.
+#[derive(Debug, Copy, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct TextSelection {
+    pub root: Option<UzNodeId>,
     pub range: SelectionRange,
 }
 
-impl DomSelection {
+impl TextSelection {
     pub fn new(root: UzNodeId, anchor: usize, active: usize) -> Self {
         Self {
-            root,
+            root: Some(root),
             range: SelectionRange { anchor, active },
         }
     }
+
+    pub fn is_active(&self) -> bool {
+        self.root.is_some()
+    }
+
     #[inline]
     pub fn anchor(&self) -> usize {
         self.range.anchor
@@ -60,14 +68,19 @@ impl DomSelection {
     }
 
     pub fn start(&self) -> usize {
-        self.range.anchor.min(self.range.active)
+        self.range.start()
     }
 
     pub fn end(&self) -> usize {
-        self.range.anchor.max(self.range.active)
+        self.range.end()
     }
 
     pub fn is_collapsed(&self) -> bool {
-        self.range.anchor == self.range.active
+        self.range.is_collapsed()
+    }
+
+    pub fn clear(&mut self) {
+        self.root = None;
+        self.range = SelectionRange::default();
     }
 }

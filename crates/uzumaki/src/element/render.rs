@@ -501,7 +501,8 @@ impl<'a> Painter<'a> {
     /// Returns a map from NodeId → (local_sel_start, local_sel_end) in grapheme units.
     fn compute_text_selections_map(&self) -> HashMap<UzNodeId, (usize, usize)> {
         let mut map = HashMap::new();
-        let Some(sel) = self.dom.selection.get() else {
+        let sel = self.dom.text_selection;
+        let Some(root) = sel.root else {
             return map;
         };
         if sel.is_collapsed() {
@@ -511,7 +512,7 @@ impl<'a> Painter<'a> {
             .dom
             .selectable_text_runs
             .iter()
-            .find(|r| r.root_id == sel.root)
+            .find(|r| r.root_id == root)
         else {
             return map;
         };

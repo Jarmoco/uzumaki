@@ -3,8 +3,8 @@ use winit::keyboard::{Key, NamedKey};
 
 use crate::clipboard::SystemClipboard;
 use crate::element::{ScrollDragState, UzNodeId};
-use crate::input;
-use crate::selection::{DomSelection, SelectionRange};
+use crate::input::{self, KeyResult};
+use crate::selection::{SelectionRange, TextSelection};
 use crate::ui::UIState;
 use crate::window::Window;
 
@@ -309,9 +309,8 @@ pub fn handle_cursor_moved(
                 logical_y,
             )
         {
-            if let Some(mut sel) = dom.selection() {
-                sel.range.active = flat_idx;
-                dom.set_selection(sel);
+            if dom.text_selection.root == Some(root_id) {
+                dom.text_selection.range.active = flat_idx;
             }
             needs_redraw = true;
         }
@@ -660,12 +659,8 @@ pub fn handle_mouse_input(
                             0
                         };
 
-                        // Ensure selection root is set to this input before
-                        // any input methods touch the shared range.
-                        dom.set_selection(DomSelection {
-                            root: nid,
-                            range: SelectionRange::default(),
-                        });
+                        // Focus the input (clears view selection, blurs previous input).
+                        dom.focus_input(nid);
 
                         if let Some(node) = dom.nodes.get_mut(nid)
                             && let Some(is) = node.as_text_input_mut()
@@ -777,12 +772,12 @@ pub fn handle_mouse_input(
                             match dom.click_count {
                                 2 => {
                                     let (ws, we) = word_boundaries_in_run(dom, run_root, flat_idx);
-                                    dom.set_selection(DomSelection::new(run_root, ws, we));
+                                    dom.set_selection(TextSelection::new(run_root, ws, we));
                                 }
                                 3 => {
                                     // Select entire text node (line-level)
                                     if let Some((run, entry)) = dom.find_run_entry_for_node(nid) {
-                                        dom.set_selection(DomSelection::new(
+                                        dom.set_selection(TextSelection::new(
                                             run.root_id,
                                             entry.flat_start,
                                             entry.flat_start + entry.grapheme_count,
@@ -796,7 +791,7 @@ pub fn handle_mouse_input(
                                         .iter()
                                         .find(|r| r.root_id == run_root)
                                     {
-                                        dom.set_selection(DomSelection::new(
+                                        dom.set_selection(TextSelection::new(
                                             run_root,
                                             0,
                                             run.total_graphemes,
@@ -805,7 +800,7 @@ pub fn handle_mouse_input(
                                 }
                                 _ => {
                                     // Single click: place cursor
-                                    dom.set_selection(DomSelection::new(
+                                    dom.set_selection(TextSelection::new(
                                         run_root, flat_idx, flat_idx,
                                     ));
                                 }
@@ -960,7 +955,7 @@ pub fn handle_key_for_input(
                 if let Some(input_state) = node.as_text_input_mut() {
                     let result = input_state.handle_key(&key_event.logical_key, modifiers);
                     match result {
-                        input::KeyResult::Edit(edit) => {
+                        KeyResult::Edit(edit) => {
                             let value = input_state.model.text();
                             let input_type = match edit.kind {
                                 input::EditKind::Insert => "insertText",
@@ -980,7 +975,7 @@ pub fn handle_key_for_input(
                             }));
                             needs_redraw = true;
                         }
-                        input::KeyResult::Blur => {
+                        KeyResult::Blur => {
                             input_state.focused = false;
                             new_focus = None;
                             events.push(AppEvent::Blur(FocusEventData {
@@ -989,10 +984,10 @@ pub fn handle_key_for_input(
                             }));
                             needs_redraw = true;
                         }
-                        input::KeyResult::Handled => {
+                        KeyResult::Handled => {
                             needs_redraw = true;
                         }
-                        input::KeyResult::Ignored => {}
+                        KeyResult::Ignored => {}
                     }
                 }
             }
@@ -1023,11 +1018,13 @@ pub fn handle_key_for_view_selection(
         return false;
     }
 
-    let Some(sel) = dom.selection() else {
+    let Some(sel) = dom.get_text_selection() else {
         return false;
     };
 
-    let root = sel.root;
+    let Some(root) = sel.root else {
+        return false;
+    };
     let SelectionRange { anchor, active } = sel.range;
 
     let run_len = dom
@@ -1048,34 +1045,34 @@ pub fn handle_key_for_view_selection(
         Key::Named(NamedKey::ArrowLeft) if shift && ctrl => {
             // Move active to previous word boundary
             let new_active = prev_word_boundary_in_run(dom, root, active);
-            dom.set_selection(DomSelection::new(root, anchor, new_active));
+            dom.set_selection(TextSelection::new(root, anchor, new_active));
             true
         }
         Key::Named(NamedKey::ArrowRight) if shift && ctrl => {
             let new_active = next_word_boundary_in_run(dom, root, active);
-            dom.set_selection(DomSelection::new(root, anchor, new_active));
+            dom.set_selection(TextSelection::new(root, anchor, new_active));
             true
         }
         Key::Named(NamedKey::ArrowLeft) if shift => {
             let new_active = if active > 0 { active - 1 } else { 0 };
-            dom.set_selection(DomSelection::new(root, anchor, new_active));
+            dom.set_selection(TextSelection::new(root, anchor, new_active));
             true
         }
         Key::Named(NamedKey::ArrowRight) if shift => {
             let new_active = (active + 1).min(run_len);
-            dom.set_selection(DomSelection::new(root, anchor, new_active));
+            dom.set_selection(TextSelection::new(root, anchor, new_active));
             true
         }
         Key::Named(NamedKey::Home) if shift => {
-            dom.set_selection(DomSelection::new(root, anchor, 0));
+            dom.set_selection(TextSelection::new(root, anchor, 0));
             true
         }
         Key::Named(NamedKey::End) if shift => {
-            dom.set_selection(DomSelection::new(root, anchor, run_len));
+            dom.set_selection(TextSelection::new(root, anchor, run_len));
             true
         }
         Key::Character(c) if ctrl && (c.as_ref() == "a" || c.as_ref() == "A") => {
-            dom.set_selection(DomSelection::new(root, 0, run_len));
+            dom.set_selection(TextSelection::new(root, 0, run_len));
             true
         }
         _ => false,
@@ -1118,10 +1115,11 @@ fn resolve_clipboard_target(dom: &UIState) -> Option<ClipboardTarget> {
     {
         return Some(ClipboardTarget::Input(focused_id));
     }
-    if let Some(sel) = dom.selection()
+    if let Some(sel) = dom.get_text_selection()
         && !sel.is_collapsed()
+        && let Some(root) = sel.root
     {
-        return Some(ClipboardTarget::ViewSelection(sel.root));
+        return Some(ClipboardTarget::ViewSelection(root));
     }
     None
 }

@@ -1,70 +1,9 @@
-use std::cell::Cell;
-use std::rc::Rc;
-
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::input::RangeProvider;
-use crate::selection::{DomSelection, SelectionRange};
+use crate::selection::TextSelection;
 use crate::ui::UIState;
 
 use super::{TextRunEntry, TextSelectRun, UzNodeId};
-
-#[derive(Debug, Clone)]
-pub struct SharedSelectionState {
-    selection: Rc<Cell<Option<DomSelection>>>,
-}
-
-impl Default for SharedSelectionState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl SharedSelectionState {
-    pub fn new() -> Self {
-        Self {
-            selection: Rc::new(Cell::new(None)),
-        }
-    }
-
-    pub fn clear(&self) {
-        self.selection.set(None);
-    }
-
-    pub fn range(&self) -> Option<SelectionRange> {
-        self.selection.get().map(|s| s.range)
-    }
-
-    pub fn get(&self) -> Option<DomSelection> {
-        self.selection.get()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.selection.get().is_none()
-    }
-
-    pub fn set(&self, selection: DomSelection) {
-        self.selection.set(Some(selection));
-    }
-}
-
-#[derive(Debug)]
-pub struct DomRangeProvider {
-    pub selection: SharedSelectionState,
-}
-
-impl RangeProvider for DomRangeProvider {
-    fn get_range(&self) -> SelectionRange {
-        self.selection.range().unwrap_or_default()
-    }
-
-    fn set_range(&mut self, range: SelectionRange) {
-        if let Some(mut sel) = self.selection.get() {
-            sel.range = range;
-            self.selection.set(sel);
-        }
-    }
-}
 
 impl UIState {
     /// Build text runs for all textSelect subtrees. Called each frame before render.
@@ -124,31 +63,27 @@ impl UIState {
         }
     }
 
-    /// Get the currently selected text content (input or view).
+    /// Get the currently selected text content. Checks focused input first,
+    /// then the active view selection.
     pub fn selected_text(&self) -> String {
-        let Some(sel) = self.selection.get() else {
-            return String::new();
-        };
-
-        if sel.is_collapsed() {
-            return String::new();
-        }
-        // Input selection: delegate to InputState
-        if let Some(node) = self.nodes.get(sel.root)
+        if let Some(fid) = self.focused_node
+            && let Some(node) = self.nodes.get(fid)
             && let Some(is) = node.as_text_input()
         {
             return is.selected_text();
         }
-        // View text selection: look up in text_select_runs
-        let Some(run) = self
-            .selectable_text_runs
-            .iter()
-            .find(|r| r.root_id == sel.root)
-        else {
+
+        let Some(root) = self.text_selection.root else {
             return String::new();
         };
-        let start = sel.start();
-        let end = sel.end();
+        if self.text_selection.is_collapsed() {
+            return String::new();
+        }
+        let Some(run) = self.selectable_text_runs.iter().find(|r| r.root_id == root) else {
+            return String::new();
+        };
+        let start = self.text_selection.start();
+        let end = self.text_selection.end();
         run.flat_text
             .graphemes(true)
             .skip(start)
@@ -159,75 +94,81 @@ impl UIState {
     /// Get the current selection range as flat grapheme offsets.
     /// Returns (start, end) where start <= end.
     pub fn selection_range(&self) -> Option<(usize, usize)> {
-        let sel = self.selection.get()?;
+        let sel = self.get_selection()?;
         if sel.is_collapsed() {
             return None;
         }
         Some((sel.start(), sel.end()))
     }
 
-    /// Get the full selection state: root node, anchor, and active offsets.
-    /// Useful for text editors that need to know the direction of selection.
-    pub fn selection_state(&self) -> Option<(UzNodeId, usize, usize)> {
-        let sel = self.selection.get()?;
-        Some((sel.root, sel.anchor(), sel.active()))
+    /// Unified selection. Prefers the focused input; falls back to the view
+    /// selection. Returns `None` if neither is set.
+    pub fn get_selection(&self) -> Option<TextSelection> {
+        if let Some(fid) = self.focused_node
+            && let Some(node) = self.nodes.get(fid)
+            && let Some(is) = node.as_text_input()
+        {
+            let r = is.range();
+            return Some(TextSelection::new(fid, r.anchor, r.active));
+        }
+        self.get_text_selection()
     }
 
-    /// Get the total grapheme count in the text run containing the current selection.
-    /// For input selections, returns the input's grapheme count.
-    pub fn selection_run_length(&self) -> Option<usize> {
-        let sel = self.selection.get()?;
-        // Input selection
-        if let Some(node) = self.nodes.get(sel.root)
+    /// Get the total grapheme count in the target containing the current selection.
+    pub(crate) fn selection_run_length(&self) -> Option<usize> {
+        if let Some(fid) = self.focused_node
+            && let Some(node) = self.nodes.get(fid)
             && let Some(is) = node.as_text_input()
         {
             return Some(is.grapheme_count());
         }
-        // View text selection
+        let root = self.text_selection.root?;
         let run = self
             .selectable_text_runs
             .iter()
-            .find(|r| r.root_id == sel.root)?;
+            .find(|r| r.root_id == root)?;
         Some(run.total_graphemes)
     }
 
-    pub fn selection(&self) -> Option<DomSelection> {
-        self.selection.get()
+    /// Active view selection, if any. Returns `None` if `root` is unset.
+    pub fn get_text_selection(&self) -> Option<TextSelection> {
+        self.text_selection.root.map(|_| self.text_selection)
     }
 
-    pub fn set_selection(&mut self, selection: DomSelection) {
-        let root = selection.root;
-
-        // If the target node is focusable (input, future: content-editable),
-        // handle focus transfer automatically.
-        let is_focusable = self
-            .nodes
-            .get(root)
-            .map(|n| n.is_text_input())
-            .unwrap_or(false);
-
-        if is_focusable {
-            if let Some(old_id) = self.focused_node
-                && old_id != root
-                && let Some(old_node) = self.nodes.get_mut(old_id)
-                && let Some(is) = old_node.as_text_input_mut()
-            {
-                is.focused = false;
-            }
-            self.focused_node = Some(root);
-            if let Some(node) = self.nodes.get_mut(root)
-                && let Some(is) = node.as_text_input_mut()
-            {
-                is.focused = true;
-                is.reset_blink();
-            }
+    /// Set the active view selection. Clears any focused input.
+    pub fn set_selection(&mut self, selection: TextSelection) {
+        if selection.root.is_some()
+            && let Some(old_id) = self.focused_node.take()
+            && let Some(old_node) = self.nodes.get_mut(old_id)
+            && let Some(is) = old_node.as_text_input_mut()
+        {
+            is.focused = false;
         }
-
-        self.selection.set(selection);
+        self.text_selection = selection;
     }
 
-    /// Clear the selection.
+    /// Focus an input node. Clears any active view selection and blurs the
+    /// previously focused input.
+    pub fn focus_input(&mut self, node_id: UzNodeId) {
+        self.text_selection.clear();
+        if let Some(old_id) = self.focused_node
+            && old_id != node_id
+            && let Some(old_node) = self.nodes.get_mut(old_id)
+            && let Some(is) = old_node.as_text_input_mut()
+        {
+            is.focused = false;
+        }
+        self.focused_node = Some(node_id);
+        if let Some(node) = self.nodes.get_mut(node_id)
+            && let Some(is) = node.as_text_input_mut()
+        {
+            is.focused = true;
+            is.reset_blink();
+        }
+    }
+
+    /// Clear the view selection (does not touch focused input).
     pub fn clear_selection(&mut self) {
-        self.selection.clear();
+        self.text_selection.clear();
     }
 }
