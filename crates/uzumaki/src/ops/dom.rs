@@ -8,7 +8,9 @@ use crate::style::*;
 pub fn op_get_root_node_id(state: &mut OpState, #[smi] window_id: u32) -> u32 {
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
-        let entry = s.windows.get(&window_id).expect("window not found");
+        let Some(entry) = s.windows.get(&window_id) else {
+            return 0;
+        };
         entry.dom.root.expect("no root node") as u32
     })
 }
@@ -21,7 +23,9 @@ pub fn op_create_element(
 ) -> u32 {
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
-        let entry = s.windows.get_mut(&window_id).expect("window not found");
+        let Some(entry) = s.windows.get_mut(&window_id) else {
+            return 0;
+        };
         let id = if element_type == "input" {
             entry.dom.create_input(UzStyle::default())
         } else {
@@ -39,7 +43,9 @@ pub fn op_create_text_node(
 ) -> u32 {
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
-        let entry = s.windows.get_mut(&window_id).expect("window not found");
+        let Some(entry) = s.windows.get_mut(&window_id) else {
+            return 0;
+        };
         entry.dom.create_text(text, UzStyle::default()) as u32
     })
 }
@@ -55,7 +61,9 @@ pub fn op_append_child(
     let cid = child_id as UzNodeId;
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
-        let entry = s.windows.get_mut(&window_id).expect("window not found");
+        let Some(entry) = s.windows.get_mut(&window_id) else {
+            return;
+        };
         entry.dom.append_child(pid, cid);
     });
 }
@@ -73,7 +81,9 @@ pub fn op_insert_before(
     let bid = before_id as UzNodeId;
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
-        let entry = s.windows.get_mut(&window_id).expect("window not found");
+        let Some(entry) = s.windows.get_mut(&window_id) else {
+            return;
+        };
         entry.dom.insert_before(pid, cid, bid);
     });
 }
@@ -89,7 +99,9 @@ pub fn op_remove_child(
     let cid = child_id as UzNodeId;
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
-        let entry = s.windows.get_mut(&window_id).expect("window not found");
+        let Some(entry) = s.windows.get_mut(&window_id) else {
+            return;
+        };
         entry.dom.remove_child(pid, cid);
     });
 }
@@ -104,7 +116,9 @@ pub fn op_set_text(
     let nid = node_id as UzNodeId;
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
-        let entry = s.windows.get_mut(&window_id).expect("window not found");
+        let Some(entry) = s.windows.get_mut(&window_id) else {
+            return;
+        };
         entry.dom.set_text_content(nid, text);
     });
 }
@@ -130,7 +144,9 @@ pub fn op_set_input_value(
     let nid = node_id as UzNodeId;
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
-        let entry = s.windows.get_mut(&window_id).expect("window not found");
+        let Some(entry) = s.windows.get_mut(&window_id) else {
+            return;
+        };
         if let Some(node) = entry.dom.nodes.get_mut(nid)
             && let Some(is) = node.as_text_input_mut()
         {
@@ -149,7 +165,9 @@ pub fn op_get_input_value(
     let nid = node_id as UzNodeId;
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
-        let entry = s.windows.get(&window_id).expect("window not found");
+        let Some(entry) = s.windows.get(&window_id) else {
+            return String::new();
+        };
         entry
             .dom
             .nodes
@@ -170,7 +188,9 @@ pub fn op_set_input_placeholder(
     let nid = node_id as UzNodeId;
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
-        let entry = s.windows.get_mut(&window_id).expect("window not found");
+        let Some(entry) = s.windows.get_mut(&window_id) else {
+            return;
+        };
         if let Some(node) = entry.dom.nodes.get_mut(nid)
             && let Some(is) = node.as_text_input_mut()
         {
@@ -189,7 +209,9 @@ pub fn op_set_input_disabled(
     let nid = node_id as UzNodeId;
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
-        let entry = s.windows.get_mut(&window_id).expect("window not found");
+        let Some(entry) = s.windows.get_mut(&window_id) else {
+            return;
+        };
         if let Some(node) = entry.dom.nodes.get_mut(nid)
             && let Some(is) = node.as_text_input_mut()
         {
@@ -208,7 +230,9 @@ pub fn op_set_input_max_length(
     let nid = node_id as UzNodeId;
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
-        let entry = s.windows.get_mut(&window_id).expect("window not found");
+        let Some(entry) = s.windows.get_mut(&window_id) else {
+            return;
+        };
         if let Some(node) = entry.dom.nodes.get_mut(nid)
             && let Some(is) = node.as_text_input_mut()
         {
@@ -231,7 +255,9 @@ pub fn op_set_input_multiline(
     let nid = node_id as UzNodeId;
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
-        let entry = s.windows.get_mut(&window_id).expect("window not found");
+        let Some(entry) = s.windows.get_mut(&window_id) else {
+            return;
+        };
         if let Some(node) = entry.dom.nodes.get_mut(nid)
             && let Some(is) = node.as_text_input_mut()
         {
@@ -250,7 +276,9 @@ pub fn op_set_input_secure(
     let nid = node_id as UzNodeId;
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
-        let entry = s.windows.get_mut(&window_id).expect("window not found");
+        let Some(entry) = s.windows.get_mut(&window_id) else {
+            return;
+        };
         if let Some(node) = entry.dom.nodes.get_mut(nid)
             && let Some(is) = node.as_text_input_mut()
         {
@@ -264,7 +292,9 @@ pub fn op_focus_input(state: &mut OpState, #[smi] window_id: u32, #[smi] node_id
     let nid = node_id as UzNodeId;
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
-        let entry = s.windows.get_mut(&window_id).expect("window not found");
+        let Some(entry) = s.windows.get_mut(&window_id) else {
+            return;
+        };
         entry.dom.focus_input(nid);
     });
 }
@@ -279,7 +309,9 @@ pub fn op_get_ancestor_path(
     let nid = node_id as UzNodeId;
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
-        let entry = s.windows.get(&window_id).expect("window not found");
+        let Some(entry) = s.windows.get(&window_id) else {
+            return Vec::new();
+        };
         let mut path = Vec::new();
         let mut current = Some(nid);
         while let Some(id) = current {
@@ -309,7 +341,9 @@ pub fn op_get_selection(state: &mut OpState, #[smi] window_id: u32) -> serde_jso
 
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
-        let entry = s.windows.get(&window_id).expect("window not found");
+        let Some(entry) = s.windows.get(&window_id) else {
+            return serde_json::Value::Null;
+        };
         let dom = &entry.dom;
         let Some(sel) = dom.get_selection() else {
             return serde_json::Value::Null;
@@ -338,7 +372,9 @@ pub fn op_get_selection(state: &mut OpState, #[smi] window_id: u32) -> serde_jso
 pub fn op_get_selected_text(state: &mut OpState, #[smi] window_id: u32) -> String {
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
-        let entry = s.windows.get(&window_id).expect("window not found");
+        let Some(entry) = s.windows.get(&window_id) else {
+            return String::new();
+        };
         entry.dom.selected_text()
     })
 }
