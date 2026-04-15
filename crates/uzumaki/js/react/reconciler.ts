@@ -6,6 +6,7 @@ import type { JSX } from './jsx/runtime';
 
 import core, { PropKey } from '../core';
 import { eventManager } from '../events';
+import type { NodeId } from '../types';
 import { Window } from '../window';
 
 const PROP_NAME_TO_KEY: Record<string, number> = {
@@ -92,6 +93,7 @@ const ENUM_KEYS = new Set([
   PropKey.Justify,
   PropKey.Display,
 ]);
+const STRING_KEYS = new Set([PropKey.Cursor]);
 
 // ── Value conversion helpers ─────────────────────────────────────────
 
@@ -222,6 +224,8 @@ function setNativeProp(
     } else {
       core.setF32Prop(windowId, nodeId, key, value ? 1 : 0);
     }
+  } else if (STRING_KEYS.has(key)) {
+    core.setStringProp(windowId, nodeId, key, String(value));
   } else {
     let numValue: number;
     if (typeof value === 'boolean') {
@@ -249,6 +253,8 @@ function clearNativeProp(
     core.setColorProp(windowId, nodeId, key, 255, 255, 255, 255);
   } else if (ENUM_KEYS.has(key)) {
     core.setEnumProp(windowId, nodeId, key, 0);
+  } else if (STRING_KEYS.has(key)) {
+    core.setStringProp(windowId, nodeId, key, '');
   } else {
     core.setF32Prop(windowId, nodeId, key, 0);
   }
@@ -697,7 +703,7 @@ class TextElement extends BaseElement<Record<string, any>> {
 
 type Container = {
   window: Window;
-  rootNodeId: any;
+  rootNodeId: NodeId;
 };
 
 function getWindowId(container: Container): number {

@@ -3,6 +3,8 @@ use vello::Scene;
 use vello::kurbo::{Affine, Rect, RoundedRect, RoundedRectRadii, Stroke};
 use vello::peniko::Color as VelloColor;
 
+use crate::cursor::CursorIcon;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Color {
     pub r: u8,
@@ -346,6 +348,8 @@ pub struct Style {
     pub opacity: f32,
     pub box_shadow: Option<BoxShadow>,
 
+    pub cursor: Option<CursorIcon>,
+
     // Text (inherited)
     #[refineable]
     pub text: TextStyle,
@@ -385,6 +389,8 @@ impl Default for Style {
             corner_radii: Corners::default(),
             opacity: 1.0,
             box_shadow: None,
+
+            cursor: None,
 
             text: TextStyle::default(),
         }

@@ -5,7 +5,9 @@ use vello::{AaSupport, RenderParams, RendererOptions, Scene};
 
 use winit::window::Window as WinitWindow;
 
-use crate::element::Dom;
+use crate::cursor::CursorIcon;
+use crate::element::ElementTree;
+use crate::element::render::Painter;
 use crate::gpu::GpuContext;
 use crate::text::TextRenderer;
 
@@ -16,6 +18,7 @@ pub struct Window {
     pub(crate) renderer: vello::Renderer,
     pub(crate) scene: Scene,
     pub(crate) text_renderer: TextRenderer,
+    current_cursor: CursorIcon,
     valid_surface: bool,
     vello_target: Option<(wgpu::Texture, wgpu::TextureView)>,
 }
@@ -77,6 +80,7 @@ impl Window {
             surface_config,
             scene,
             text_renderer: TextRenderer::new(),
+            current_cursor: CursorIcon::Default,
             valid_surface,
             vello_target: None,
         })
@@ -86,11 +90,19 @@ impl Window {
         self.winit_window.id()
     }
 
+    pub(crate) fn set_cursor(&mut self, icon: CursorIcon) {
+        if self.current_cursor == icon {
+            return;
+        }
+        self.current_cursor = icon;
+        self.winit_window.set_cursor(icon.to_winit());
+    }
+
     pub(crate) fn paint_and_present(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        dom: &mut Dom,
+        dom: &mut ElementTree,
     ) {
         if !self.valid_surface {
             return;
@@ -108,10 +120,10 @@ impl Window {
             height as f32 / scale as f32,
             &mut self.text_renderer,
         );
-        dom.render(&mut self.scene, &mut self.text_renderer, scale);
+        Painter::new(dom, &mut self.scene, &mut self.text_renderer, scale).paint();
         if dom.refresh_hit_test() {
             self.scene.reset();
-            dom.render(&mut self.scene, &mut self.text_renderer, scale);
+            Painter::new(dom, &mut self.scene, &mut self.text_renderer, scale).paint();
         }
 
         let target_view = Self::ensure_vello_target(&mut self.vello_target, device, width, height);

@@ -49,7 +49,28 @@ interface ElementStyles {
   borderLeft?: number | string;
   borderColor?: string;
   opacity?: number | string;
-  cursor?: string;
+  cursor?:
+    | 'default'
+    | 'auto'
+    | 'pointer'
+    | 'text'
+    | 'wait'
+    | 'crosshair'
+    | 'move'
+    | 'not-allowed'
+    | 'grab'
+    | 'grabbing'
+    | 'help'
+    | 'progress'
+    | 'ew-resize'
+    | 'ns-resize'
+    | 'nesw-resize'
+    | 'nwse-resize'
+    | 'col-resize'
+    | 'row-resize'
+    | 'all-scroll'
+    | 'zoom-in'
+    | 'zoom-out';
   display?: 'flex' | 'none' | 'block';
   scrollable?: boolean;
   // if true text inside this view can be selected
