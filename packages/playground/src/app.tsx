@@ -369,6 +369,7 @@ function TextSelectDemo() {
       border="1"
     >
       <text fontSize={25}>Selectable text</text>
+      <input placeholder="" />
       <view>
         Adding a <Code>selectable</Code> prop to a <Code>view</Code> element
         allows to select the text inside it
