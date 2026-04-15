@@ -218,14 +218,14 @@ function setNativeProp(
     core.setColorProp(windowId, nodeId, key, c.r, c.g, c.b, c.a);
   } else if (ENUM_KEYS.has(key)) {
     core.setEnumProp(windowId, nodeId, key, toEnumValue(key, value));
+  } else if (STRING_KEYS.has(key)) {
+    core.setStringProp(windowId, nodeId, key, String(value));
   } else if (key === PropKey.Visibility) {
     if (typeof value === 'string') {
       core.setF32Prop(windowId, nodeId, key, value === 'visible' ? 1 : 0);
     } else {
       core.setF32Prop(windowId, nodeId, key, value ? 1 : 0);
     }
-  } else if (STRING_KEYS.has(key)) {
-    core.setStringProp(windowId, nodeId, key, String(value));
   } else {
     let numValue: number;
     if (typeof value === 'boolean') {
