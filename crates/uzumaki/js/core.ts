@@ -50,6 +50,12 @@ interface Core {
     prop: number,
     value: number,
   ): void;
+  setStringProp(
+    windowId: number,
+    nodeId: NodeId,
+    prop: number,
+    value: string,
+  ): void;
   setInputValue(windowId: number, nodeId: NodeId, value: string): void;
   getInputValue(windowId: number, nodeId: NodeId): string;
   setInputPlaceholder(

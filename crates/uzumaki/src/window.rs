@@ -5,6 +5,7 @@ use vello::{AaSupport, RenderParams, RendererOptions, Scene};
 
 use winit::window::Window as WinitWindow;
 
+use crate::cursor::CursorIcon;
 use crate::element::ElementTree;
 use crate::gpu::GpuContext;
 use crate::text::TextRenderer;
@@ -16,6 +17,7 @@ pub struct Window {
     pub(crate) renderer: vello::Renderer,
     pub(crate) scene: Scene,
     pub(crate) text_renderer: TextRenderer,
+    current_cursor: CursorIcon,
     valid_surface: bool,
     vello_target: Option<(wgpu::Texture, wgpu::TextureView)>,
 }
@@ -77,6 +79,7 @@ impl Window {
             surface_config,
             scene,
             text_renderer: TextRenderer::new(),
+            current_cursor: CursorIcon::Default,
             valid_surface,
             vello_target: None,
         })
@@ -84,6 +87,14 @@ impl Window {
 
     pub fn id(&self) -> winit::window::WindowId {
         self.winit_window.id()
+    }
+
+    pub(crate) fn set_cursor(&mut self, icon: CursorIcon) {
+        if self.current_cursor == icon {
+            return;
+        }
+        self.current_cursor = icon;
+        self.winit_window.set_cursor(icon.to_winit());
     }
 
     pub(crate) fn paint_and_present(

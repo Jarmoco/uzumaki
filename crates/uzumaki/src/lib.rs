@@ -1,6 +1,7 @@
 pub mod runtime;
 
 pub mod clipboard;
+pub mod cursor;
 pub mod element;
 pub mod elements;
 pub mod event_dispatch;
@@ -559,7 +560,6 @@ pub fn op_set_f32_prop(
                         Visibility::Hidden
                     };
                 }
-                PropKey::Cursor => {}
                 _ => return,
             }
         }
@@ -627,6 +627,41 @@ pub fn op_set_enum_prop(
             }
         }
         sync_taffy(&mut entry.dom, nid);
+    });
+}
+
+#[op2(fast)]
+pub fn op_set_string_prop(
+    state: &mut OpState,
+    #[smi] window_id: u32,
+    #[smi] node_id: u32,
+    #[smi] prop: u32,
+    #[string] value: &str,
+) {
+    let nid = node_id as NodeId;
+    let Ok(prop) = PropKey::try_from(prop) else {
+        return;
+    };
+    let app_state = state.borrow::<SharedAppState>().clone();
+    with_state(&app_state, |s| {
+        let entry = s.windows.get_mut(&window_id).expect("window not found");
+        let Some(node) = entry.dom.nodes.get_mut(nid) else {
+            return;
+        };
+
+        #[allow(clippy::single_match)]
+        match prop {
+            PropKey::Cursor => {
+                node.style.cursor = cursor::CursorIcon::parse(value);
+                if let Some(handle) = entry.handle.as_mut()
+                    && let Some(top) = entry.dom.hit_state.top_node
+                {
+                    let icon = entry.dom.resolve_cursor(top);
+                    handle.set_cursor(icon);
+                }
+            }
+            _ => {}
+        }
     });
 }
 
@@ -960,6 +995,7 @@ extension!(
     op_set_color_prop,
     op_set_f32_prop,
     op_set_enum_prop,
+    op_set_string_prop,
     op_set_input_value,
     op_get_input_value,
     op_set_input_placeholder,
@@ -1608,6 +1644,9 @@ impl ApplicationHandler<UserEvent> for Application {
                 let mut state = self.app_state.borrow_mut();
                 if let Some(entry) = state.windows.get_mut(&wid) {
                     entry.dom.hit_state = Default::default();
+                    if let Some(handle) = entry.handle.as_mut() {
+                        handle.set_cursor(crate::cursor::CursorIcon::Default);
+                    }
                     needs_redraw = true;
                 }
             }

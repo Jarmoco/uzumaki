@@ -316,6 +316,13 @@ pub fn handle_cursor_moved(
         }
     }
 
+    let cursor = dom
+        .hit_state
+        .top_node
+        .map(|id| dom.resolve_cursor(id))
+        .unwrap_or(crate::cursor::CursorIcon::Default);
+    handle.set_cursor(cursor);
+
     needs_redraw
 }
 

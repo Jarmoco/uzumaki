@@ -9,6 +9,7 @@ use vello::Scene;
 use vello::kurbo::{Affine, Rect, RoundedRect, RoundedRectRadii};
 use vello::peniko::{Color as VelloColor, Fill};
 
+use crate::cursor::CursorIcon;
 use crate::elements::input::{InputRenderInfo, compute_selection_rects};
 use crate::input::{BaseInputState, RangeProvider};
 use crate::interactivity::{HitTestState, HitboxStore, Interactivity};
@@ -170,6 +171,11 @@ pub trait ElementBehavior {
     fn is_text(&self) -> bool {
         false
     }
+
+    /// Default cursor for this behavior when unset by style.
+    fn default_cursor(&self) -> Option<CursorIcon> {
+        None
+    }
 }
 
 pub struct ViewBehavior;
@@ -215,6 +221,13 @@ impl ElementBehavior for InputBehavior {
     }
     fn is_input(&self) -> bool {
         true
+    }
+    fn default_cursor(&self) -> Option<CursorIcon> {
+        if self.state.disabled {
+            Some(CursorIcon::NotAllowed)
+        } else {
+            Some(CursorIcon::Text)
+        }
     }
 }
 
@@ -332,6 +345,33 @@ impl ElementTree {
 
     pub fn get_node_mut(&mut self, node_id: NodeId) -> Option<&mut Node> {
         self.nodes.get_mut(node_id)
+    }
+
+    /// Resolve the effective cursor for `node_id`.
+    /// Precedence at the hit node: explicit style -> behavior default -> selectable
+    /// text fallback. Otherwise walk ancestors honoring only explicit overrides.
+    pub fn resolve_cursor(&self, node_id: NodeId) -> CursorIcon {
+        let Some(node) = self.nodes.get(node_id) else {
+            return CursorIcon::Default;
+        };
+        if let Some(c) = node.style.cursor {
+            return c;
+        }
+        if let Some(c) = node.behavior.default_cursor() {
+            return c;
+        }
+        if node.selectable == Some(true) {
+            return CursorIcon::Text;
+        }
+        let mut cur = node.parent;
+        while let Some(id) = cur {
+            let n = &self.nodes[id];
+            if let Some(c) = n.style.cursor {
+                return c;
+            }
+            cur = n.parent;
+        }
+        CursorIcon::Default
     }
 
     /// Create a View element with a style.

@@ -92,6 +92,7 @@ const ENUM_KEYS = new Set([
   PropKey.Justify,
   PropKey.Display,
 ]);
+const STRING_KEYS = new Set([PropKey.Cursor]);
 
 // ── Value conversion helpers ─────────────────────────────────────────
 
@@ -216,6 +217,8 @@ function setNativeProp(
     core.setColorProp(windowId, nodeId, key, c.r, c.g, c.b, c.a);
   } else if (ENUM_KEYS.has(key)) {
     core.setEnumProp(windowId, nodeId, key, toEnumValue(key, value));
+  } else if (STRING_KEYS.has(key)) {
+    core.setStringProp(windowId, nodeId, key, String(value));
   } else {
     let numValue: number;
     if (typeof value === 'boolean') {
@@ -243,6 +246,8 @@ function clearNativeProp(
     core.setColorProp(windowId, nodeId, key, 255, 255, 255, 255);
   } else if (ENUM_KEYS.has(key)) {
     core.setEnumProp(windowId, nodeId, key, 0);
+  } else if (STRING_KEYS.has(key)) {
+    core.setStringProp(windowId, nodeId, key, '');
   } else {
     core.setF32Prop(windowId, nodeId, key, 0);
   }
