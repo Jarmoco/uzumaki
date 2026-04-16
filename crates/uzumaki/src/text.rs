@@ -32,12 +32,18 @@ impl Default for TextRenderer {
 
 impl TextRenderer {
     pub fn new() -> Self {
-        let mut font_system = FontSystem::new();
-
-        // Load bundled Roboto so we always have a known font available,
-        // even on systems with limited installed fonts.
+        // We use include_bytes! to embed Roboto at compile time, ensuring a fallback font
+        // is always available even on systems with limited installed fonts.
+        //
+        // Memory optimization note: Previously we used FontSystem::new() which calls
+        // load_system_fonts() and loads ALL system fonts into heap (could reach hundreds of MBs!).
+        // Now we only load the bundled Roboto via load_font_data().
         let roboto = include_bytes!("../assets/Roboto-Regular.ttf");
-        font_system.db_mut().load_font_data(roboto.to_vec());
+
+        let mut db = fontdb::Database::new();
+        db.load_font_data(roboto.to_vec());
+        db.set_sans_serif_family("Roboto");
+        let font_system = FontSystem::new_with_locale_and_db("en-US".to_string(), db);
 
         Self {
             font_system,
