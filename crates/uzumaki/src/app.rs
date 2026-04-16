@@ -116,6 +116,7 @@ pub struct Application {
     module_loaded: bool,
     pub tokio_runtime: Option<tokio::runtime::Runtime>,
     global_app_event_dispatch_fn: Option<v8::Global<v8::Function>>,
+    gc_tick_counter: u32,
 }
 
 impl Application {
@@ -263,6 +264,7 @@ impl Application {
             module_loaded: false,
             tokio_runtime: None,
             global_app_event_dispatch_fn: None,
+            gc_tick_counter: 0,
         })
     }
 
@@ -381,6 +383,23 @@ impl ApplicationHandler<UserEvent> for Application {
 
     fn about_to_wait(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
         self.tick_js();
+
+        self.gc_tick_counter += 1;
+        if self.gc_tick_counter >= 300 {
+            self.gc_tick_counter = 0;
+            let all_unfocused = self
+                .app_state
+                .borrow()
+                .windows
+                .values()
+                .all(|w| !w.dom.window_focused);
+            if all_unfocused {
+                self.worker
+                    .js_runtime
+                    .v8_isolate()
+                    .low_memory_notification();
+            }
+        }
     }
 
     fn user_event(&mut self, event_loop: &winit::event_loop::ActiveEventLoop, event: UserEvent) {
@@ -756,8 +775,18 @@ impl ApplicationHandler<UserEvent> for Application {
                 state.windows.remove(&wid);
                 if state.windows.is_empty() {
                     event_loop.exit();
+                    drop(state);
+                    self.worker
+                        .js_runtime
+                        .v8_isolate()
+                        .low_memory_notification();
                     return;
                 }
+                drop(state);
+                self.worker
+                    .js_runtime
+                    .v8_isolate()
+                    .low_memory_notification();
             }
             _ => {}
         }
