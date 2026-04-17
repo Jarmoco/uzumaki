@@ -2,6 +2,8 @@
 
 Native desktop UI framework for JavaScript/TypeScript. GPU-rendered with **wgpu** + **Vello**, powered by a **Deno** runtime. Write your UI in React.
 
+![logo](etc/logo.svg)
+
 > [!WARNING]
 > Uzumaki is in alpha. The API is unstable and will change. Do not use in production.
 
