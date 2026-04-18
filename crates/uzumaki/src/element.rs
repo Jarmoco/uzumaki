@@ -110,7 +110,7 @@ impl ElementNode {
     }
 
     pub fn new_text_input(state: InputState) -> Self {
-        Self::new(ElementData::TextInput(state))
+        Self::new(ElementData::TextInput(Box::new(state)))
     }
 
     pub fn is_text_input(&self) -> bool {
@@ -129,7 +129,7 @@ impl ElementNode {
 #[derive(Default)]
 pub enum ElementData {
     // this is text Element <text>
-    TextInput(InputState),
+    TextInput(Box<InputState>),
     // for view nodes
     #[default]
     None,
@@ -186,7 +186,9 @@ impl NodeData {
     pub fn default_cursor(&self) -> Option<UzCursorIcon> {
         match self {
             Self::Element(element) => element.data.default_cursor(),
-            Self::Text(_) => Some(UzCursorIcon::Text),
+            // Plain text labels should inherit the cursor from their container.
+            // Text cursor is handled separately for inputs and textSelect content.
+            Self::Text(_) => None,
             _ => None,
         }
     }
