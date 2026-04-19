@@ -8,6 +8,7 @@ import { LayoutPage } from './pages/layoutPage';
 import { StressPage } from './pages/stressPage';
 import { EventsPage } from './pages/eventsPage';
 import { IssuesPage } from './pages/issuesPage';
+import { TimerPage } from './pages/timerPage';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
@@ -19,6 +20,7 @@ export function App() {
     stress: <StressPage />,
     events: <EventsPage />,
     issues: <IssuesPage />,
+    timer: <TimerPage />,
   }[activeTab];
 
   return (

@@ -7,6 +7,7 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'layout', label: 'Layout Lab', icon: '⊞' },
   { id: 'stress', label: 'Stress Test', icon: '⚡' },
   { id: 'events', label: 'Mouse Events', icon: '◎' },
+  { id: 'timer', label: 'Timers', icon: '⏱' },
   { id: 'issues', label: 'GitHub Issues', icon: '☰' },
 ];
 
