@@ -374,6 +374,12 @@ impl Application {
             return false;
         }
 
+        let rt = self.tokio_runtime.as_ref().unwrap();
+        // Deno's timer ops require an active Tokio runtime. App events are invoked
+        // directly from winit callbacks, so we need to re-enter the runtime before
+        // calling into JS event handlers.
+        let _guard = rt.enter();
+
         // Clone the Global handle so we don't hold a borrow on self
         // while the scope borrows self.worker.js_runtime
         let dispatch_fn = self.global_app_event_dispatch_fn.clone().unwrap();
@@ -709,10 +715,21 @@ impl ApplicationHandler<UserEvent> for Application {
                                         &key_event,
                                         modifiers,
                                     );
+                                    let (checkbox_redraw, checkbox_events) =
+                                        event_dispatch::handle_key_for_checkbox(
+                                            &mut entry.dom,
+                                            wid,
+                                            &key_event,
+                                        );
                                     if redraw {
                                         needs_redraw = true;
                                     }
-                                    events
+                                    if checkbox_redraw {
+                                        needs_redraw = true;
+                                    }
+                                    let mut all_events = events;
+                                    all_events.extend(checkbox_events);
+                                    all_events
                                 })
                             };
 
@@ -863,6 +880,9 @@ impl ApplicationHandler<UserEvent> for Application {
                 }
             }
             WindowEvent::CloseRequested => {
+                self.dispatch_event_to_js(&event_dispatch::AppEvent::WindowClose(
+                    event_dispatch::WindowLoadEventData { window_id: wid },
+                ));
                 let mut state = self.app_state.borrow_mut();
                 state.winit_id_to_entry_id.remove(&window_id);
                 state.windows.remove(&wid);

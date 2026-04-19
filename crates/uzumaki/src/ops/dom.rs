@@ -4,6 +4,10 @@ use crate::app::{SharedAppState, with_state};
 use crate::element::UzNodeId;
 use crate::style::UzStyle;
 
+fn window_not_found() -> deno_error::JsErrorBox {
+    deno_error::JsErrorBox::new("WindowNotFound", "window not found")
+}
+
 #[op2(fast)]
 pub fn op_get_root_node_id(
     state: &mut OpState,
@@ -12,7 +16,7 @@ pub fn op_get_root_node_id(
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
         let Some(entry) = s.windows.get(&window_id) else {
-            return Err(deno_error::JsErrorBox::generic("window not found"));
+            return Err(window_not_found());
         };
         Ok(entry.dom.root.expect("no root node") as u32)
     })
@@ -27,10 +31,12 @@ pub fn op_create_element(
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
         let Some(entry) = s.windows.get_mut(&window_id) else {
-            return Err(deno_error::JsErrorBox::generic("window not found"));
+            return Err(window_not_found());
         };
         let id = if element_type == "input" {
             entry.dom.create_input(UzStyle::default())
+        } else if element_type == "checkbox" {
+            entry.dom.create_checkbox(UzStyle::default())
         } else {
             entry.dom.create_view(UzStyle::default())
         };
@@ -47,7 +53,7 @@ pub fn op_create_text_node(
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
         let Some(entry) = s.windows.get_mut(&window_id) else {
-            return Err(deno_error::JsErrorBox::generic("window not found"));
+            return Err(window_not_found());
         };
         Ok(entry.dom.create_text(text, UzStyle::default()) as u32)
     })
@@ -65,7 +71,7 @@ pub fn op_append_child(
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
         let Some(entry) = s.windows.get_mut(&window_id) else {
-            return Err(deno_error::JsErrorBox::generic("window not found"));
+            return Err(window_not_found());
         };
         entry.dom.append_child(pid, cid);
         Ok(())
@@ -86,7 +92,7 @@ pub fn op_insert_before(
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
         let Some(entry) = s.windows.get_mut(&window_id) else {
-            return Err(deno_error::JsErrorBox::generic("window not found"));
+            return Err(window_not_found());
         };
         entry.dom.insert_before(pid, cid, bid);
         Ok(())
@@ -105,7 +111,7 @@ pub fn op_remove_child(
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
         let Some(entry) = s.windows.get_mut(&window_id) else {
-            return Err(deno_error::JsErrorBox::generic("window not found"));
+            return Err(window_not_found());
         };
         entry.dom.remove_child(pid, cid);
         Ok(())
@@ -123,7 +129,7 @@ pub fn op_set_text(
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
         let Some(entry) = s.windows.get_mut(&window_id) else {
-            return Err(deno_error::JsErrorBox::generic("window not found"));
+            return Err(window_not_found());
         };
         entry.dom.set_text_content(nid, text);
         Ok(())
@@ -138,7 +144,7 @@ pub fn op_reset_dom(
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
         let Some(entry) = s.windows.get_mut(&window_id) else {
-            return Err(deno_error::JsErrorBox::generic("window not found"));
+            return Err(window_not_found());
         };
         let root = entry.dom.root.expect("no root node");
         entry.dom.clear_children(root);
@@ -157,7 +163,7 @@ pub fn op_set_input_value(
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
         let Some(entry) = s.windows.get_mut(&window_id) else {
-            return Err(deno_error::JsErrorBox::generic("window not found"));
+            return Err(window_not_found());
         };
         if let Some(node) = entry.dom.nodes.get_mut(nid)
             && let Some(is) = node.as_text_input_mut()
@@ -179,7 +185,7 @@ pub fn op_get_input_value(
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
         let Some(entry) = s.windows.get(&window_id) else {
-            return Err(deno_error::JsErrorBox::generic("window not found"));
+            return Ok(String::new());
         };
         Ok(entry
             .dom
@@ -202,7 +208,7 @@ pub fn op_set_input_placeholder(
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
         let Some(entry) = s.windows.get_mut(&window_id) else {
-            return Err(deno_error::JsErrorBox::generic("window not found"));
+            return Err(window_not_found());
         };
         if let Some(node) = entry.dom.nodes.get_mut(nid)
             && let Some(is) = node.as_text_input_mut()
@@ -224,7 +230,7 @@ pub fn op_set_input_disabled(
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
         let Some(entry) = s.windows.get_mut(&window_id) else {
-            return Err(deno_error::JsErrorBox::generic("window not found"));
+            return Err(window_not_found());
         };
         if let Some(node) = entry.dom.nodes.get_mut(nid)
             && let Some(is) = node.as_text_input_mut()
@@ -246,7 +252,7 @@ pub fn op_set_input_max_length(
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
         let Some(entry) = s.windows.get_mut(&window_id) else {
-            return Err(deno_error::JsErrorBox::generic("window not found"));
+            return Err(window_not_found());
         };
         if let Some(node) = entry.dom.nodes.get_mut(nid)
             && let Some(is) = node.as_text_input_mut()
@@ -272,7 +278,7 @@ pub fn op_set_input_multiline(
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
         let Some(entry) = s.windows.get_mut(&window_id) else {
-            return Err(deno_error::JsErrorBox::generic("window not found"));
+            return Err(window_not_found());
         };
         if let Some(node) = entry.dom.nodes.get_mut(nid)
             && let Some(is) = node.as_text_input_mut()
@@ -294,12 +300,34 @@ pub fn op_set_input_secure(
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
         let Some(entry) = s.windows.get_mut(&window_id) else {
-            return Err(deno_error::JsErrorBox::generic("window not found"));
+            return Err(window_not_found());
         };
         if let Some(node) = entry.dom.nodes.get_mut(nid)
             && let Some(is) = node.as_text_input_mut()
         {
             is.secure = secure;
+        }
+        Ok(())
+    })
+}
+
+#[op2(fast)]
+pub fn op_set_checkbox_checked(
+    state: &mut OpState,
+    #[smi] window_id: u32,
+    #[smi] node_id: u32,
+    checked: bool,
+) -> Result<(), deno_error::JsErrorBox> {
+    let nid = node_id as UzNodeId;
+    let app_state = state.borrow::<SharedAppState>().clone();
+    with_state(&app_state, |s| {
+        let Some(entry) = s.windows.get_mut(&window_id) else {
+            return Err(window_not_found());
+        };
+        if let Some(node) = entry.dom.nodes.get_mut(nid)
+            && let Some(value) = node.as_checkbox_input_mut()
+        {
+            *value = checked;
         }
         Ok(())
     })
@@ -315,7 +343,7 @@ pub fn op_focus_input(
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
         let Some(entry) = s.windows.get_mut(&window_id) else {
-            return Err(deno_error::JsErrorBox::generic("window not found"));
+            return Err(window_not_found());
         };
         entry.dom.focus_input(nid);
         Ok(())
@@ -333,7 +361,7 @@ pub fn op_get_ancestor_path(
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
         let Some(entry) = s.windows.get(&window_id) else {
-            return Err(deno_error::JsErrorBox::generic("window not found"));
+            return Ok(Vec::new());
         };
         let mut path = Vec::new();
         let mut current = Some(nid);
@@ -368,7 +396,7 @@ pub fn op_get_selection(
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
         let Some(entry) = s.windows.get(&window_id) else {
-            return Err(deno_error::JsErrorBox::generic("window not found"));
+            return Ok(serde_json::Value::Null);
         };
         let dom = &entry.dom;
         let Some(sel) = dom.get_selection() else {
@@ -402,7 +430,7 @@ pub fn op_get_selected_text(
     let app_state = state.borrow::<SharedAppState>().clone();
     with_state(&app_state, |s| {
         let Some(entry) = s.windows.get(&window_id) else {
-            return Err(deno_error::JsErrorBox::generic("window not found"));
+            return Ok(String::new());
         };
         Ok(entry.dom.selected_text())
     })

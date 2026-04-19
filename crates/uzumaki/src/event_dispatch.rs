@@ -90,7 +90,13 @@ pub enum AppEvent {
     Paste(ClipboardEventData),
     #[serde(rename = "windowLoad")]
     WindowLoad(WindowLoadEventData),
+    #[serde(rename = "windowClose")]
+    WindowClose(WindowLoadEventData),
     HotReload,
+}
+
+fn checkbox_value_string(checked: bool) -> String {
+    checked.to_string()
 }
 
 pub fn handle_redraw(
@@ -124,10 +130,14 @@ fn focused_input_layout_meta(
     let pt = node.style.padding.top;
     let top_pad = if pt > 0.0 { pt } else { 4.0 };
     let font_size = node.style.text.font_size;
+    let hb = node
+        .interactivity
+        .hitbox_id
+        .and_then(|hid| dom.hitbox_store.get(hid))?;
     let layout = dom.taffy.layout(node.taffy_node).ok()?;
     Some(FocusedInputLayoutMeta {
-        taffy_x: layout.location.x as f64,
-        taffy_y: layout.location.y as f64,
+        taffy_x: hb.bounds.x,
+        taffy_y: hb.bounds.y,
         input_padding,
         top_pad,
         multiline: is.multiline,
@@ -337,7 +347,7 @@ pub fn handle_cursor_moved(
 
         // View text selection drag
         if let Some(root_id) = dom.dragging_view_selection
-            && let Some(flat_idx) = hit_text_in_run(
+            && let Some(hit) = hit_text_in_run(
                 dom,
                 &mut handle.text_renderer,
                 root_id,
@@ -346,7 +356,7 @@ pub fn handle_cursor_moved(
             )
         {
             if dom.text_selection.root == Some(root_id) {
-                dom.text_selection.range.active = flat_idx;
+                dom.text_selection.range.active = hit.flat_index;
             }
             needs_redraw = true;
         }
@@ -363,14 +373,19 @@ pub fn handle_cursor_moved(
 }
 
 /// Hit-test a mouse position against all text nodes in a textSelect run.
-/// Returns the flat grapheme index if a suitable text node is found.
+/// Returns the matched text node and flat grapheme index if a suitable text node is found.
+struct TextRunHit {
+    node_id: UzNodeId,
+    flat_index: usize,
+}
+
 fn hit_text_in_run(
     dom: &UIState,
     text_renderer: &mut crate::text::TextRenderer,
     root_id: crate::element::UzNodeId,
     mx: f64,
     my: f64,
-) -> Option<usize> {
+) -> Option<TextRunHit> {
     use crate::style::Bounds;
 
     let run = dom
@@ -397,7 +412,10 @@ fn hit_text_in_run(
     let font_size = node.style.text.font_size;
 
     if text.content.is_empty() {
-        return Some(entry.flat_start);
+        return Some(TextRunHit {
+            node_id,
+            flat_index: entry.flat_start,
+        });
     }
 
     let relative_x = (mx - bounds.x) as f32;
@@ -410,7 +428,10 @@ fn hit_text_in_run(
         relative_y,
     );
 
-    Some(entry.flat_start + local_idx.min(entry.grapheme_count))
+    Some(TextRunHit {
+        node_id,
+        flat_index: entry.flat_start + local_idx.min(entry.grapheme_count),
+    })
 }
 
 fn point_to_rect_dist(px: f64, py: f64, bounds: &crate::style::Bounds) -> f64 {
@@ -421,68 +442,53 @@ fn point_to_rect_dist(px: f64, py: f64, bounds: &crate::style::Bounds) -> f64 {
     (dx * dx + dy * dy).sqrt()
 }
 
-/// Find word boundaries around a flat grapheme index within a text run.
-fn word_boundaries_in_run(
+fn text_range_at_point(
     dom: &UIState,
-    root_id: crate::element::UzNodeId,
-    flat_idx: usize,
-) -> (usize, usize) {
-    let Some(run) = dom
-        .selectable_text_runs
-        .iter()
-        .find(|r| r.root_id == root_id)
-    else {
-        return (flat_idx, flat_idx);
+    text_renderer: &mut crate::text::TextRenderer,
+    node_id: UzNodeId,
+    mx: f64,
+    my: f64,
+    select_line: bool,
+) -> Option<(usize, usize, usize)> {
+    let (run, entry) = dom.find_run_entry_for_node(node_id)?;
+    let node = dom.nodes.get(node_id)?;
+    let text = node.as_text_node()?;
+    let font_size = node.style.text.font_size;
+    let bounds = node
+        .interactivity
+        .hitbox_id
+        .and_then(|hid| dom.hitbox_store.get(hid))
+        .map(|hb| hb.bounds)?;
+
+    if text.content.is_empty() {
+        return Some((run.root_id, entry.flat_start, entry.flat_start));
+    }
+
+    let rel_x = (mx - bounds.x) as f32;
+    let rel_y = (my - bounds.y) as f32;
+    let (local_start, local_end) = if select_line {
+        text_renderer.line_range_at_point(
+            &text.content,
+            font_size,
+            Some(bounds.width as f32),
+            rel_x,
+            rel_y,
+        )
+    } else {
+        text_renderer.word_range_at_point(
+            &text.content,
+            font_size,
+            Some(bounds.width as f32),
+            rel_x,
+            rel_y,
+        )
     };
-    let chars: Vec<char> = run.flat_text.chars().collect();
-    let graphemes: Vec<&str> =
-        unicode_segmentation::UnicodeSegmentation::graphemes(run.flat_text.as_str(), true)
-            .collect();
-    // Map grapheme index to char index
-    let mut char_idx = 0usize;
-    for (i, g) in graphemes.iter().enumerate() {
-        if i == flat_idx {
-            break;
-        }
-        char_idx += g.chars().count();
-    }
 
-    let is_word = |c: char| c.is_alphanumeric() || c == '_';
-
-    // Find word start
-    let mut start_char = char_idx;
-    if start_char < chars.len() && is_word(chars[start_char]) {
-        while start_char > 0 && is_word(chars[start_char - 1]) {
-            start_char -= 1;
-        }
-    }
-    // Find word end
-    let mut end_char = char_idx;
-    if end_char < chars.len() && is_word(chars[end_char]) {
-        while end_char < chars.len() && is_word(chars[end_char]) {
-            end_char += 1;
-        }
-    } else if end_char < chars.len() {
-        end_char += 1;
-    }
-
-    // Convert char indices back to grapheme indices
-    let mut gi = 0usize;
-    let mut ci = 0usize;
-    let mut start_g = 0;
-    let mut end_g = graphemes.len();
-    for g in &graphemes {
-        if ci == start_char {
-            start_g = gi;
-        }
-        ci += g.chars().count();
-        gi += 1;
-        if ci == end_char {
-            end_g = gi;
-        }
-    }
-
-    (start_g, end_g)
+    Some((
+        run.root_id,
+        entry.flat_start + local_start.min(entry.grapheme_count),
+        entry.flat_start + local_end.min(entry.grapheme_count),
+    ))
 }
 
 pub fn handle_mouse_input(
@@ -589,6 +595,10 @@ pub fn handle_mouse_input(
                     .and_then(|nid| dom.nodes.get(nid))
                     .map(|n| n.is_text_input())
                     .unwrap_or(false);
+                let clicked_is_checkbox = js_target
+                    .and_then(|nid| dom.nodes.get(nid))
+                    .map(|n| n.is_checkbox_input())
+                    .unwrap_or(false);
 
                 let old_focus = dom.focused_node;
 
@@ -680,6 +690,29 @@ pub fn handle_mouse_input(
 
                     scroll_input_to_cursor(dom, handle);
                     dom.dragging_input = Some(nid);
+                } else if clicked_is_checkbox {
+                    let nid = js_target.unwrap();
+
+                    if old_focus != Some(nid) {
+                        if let Some(old_id) = old_focus {
+                            if let Some(old_node) = dom.nodes.get_mut(old_id)
+                                && let Some(is) = old_node.as_text_input_mut()
+                            {
+                                is.focused = false;
+                            }
+                            events.push(AppEvent::Blur(FocusEventData {
+                                window_id: wid,
+                                node_id: old_id,
+                            }));
+                        }
+                        events.push(AppEvent::Focus(FocusEventData {
+                            window_id: wid,
+                            node_id: nid,
+                        }));
+                    }
+
+                    dom.clear_selection();
+                    dom.focused_node = Some(nid);
                 } else {
                     // Clicked non-input: blur focused input
                     if let Some(old_id) = old_focus {
@@ -717,33 +750,14 @@ pub fn handle_mouse_input(
                         }
 
                         // Find the run this text node belongs to
-                        if let Some((run_root, flat_idx)) = {
-                            dom.find_run_entry_for_node(nid).and_then(|(run, entry)| {
-                                let node = dom.nodes.get(nid)?;
-                                let text = node.as_text_node()?;
-                                let font_size = node.style.text.font_size;
-                                let bounds = node
-                                    .interactivity
-                                    .hitbox_id
-                                    .and_then(|hid| dom.hitbox_store.get(hid))
-                                    .map(|hb| hb.bounds)?;
-                                let local_idx = if text.content.is_empty() {
-                                    0
-                                } else {
-                                    let rel_x = (mx - bounds.x) as f32;
-                                    let rel_y = (my - bounds.y) as f32;
-                                    handle.text_renderer.hit_to_grapheme_2d(
-                                        &text.content,
-                                        font_size,
-                                        Some(bounds.width as f32),
-                                        rel_x,
-                                        rel_y,
-                                    )
-                                };
-                                let flat = entry.flat_start + local_idx.min(entry.grapheme_count);
-                                Some((run.root_id, flat))
-                            })
-                        } {
+                        let run_root = dom.find_run_entry_for_node(nid).map(|(run, _)| run.root_id);
+
+                        if let Some(hit) = run_root.and_then(|root_id| {
+                            hit_text_in_run(dom, &mut handle.text_renderer, root_id, mx, my)
+                        }) {
+                            let run_root = run_root.unwrap_or(nid);
+                            let flat_idx = hit.flat_index;
+
                             // Multi-click detection
                             let now = std::time::Instant::now();
                             let is_consecutive = dom.last_click_node == Some(nid)
@@ -760,17 +774,27 @@ pub fn handle_mouse_input(
 
                             match dom.click_count {
                                 2 => {
-                                    let (ws, we) = word_boundaries_in_run(dom, run_root, flat_idx);
-                                    dom.set_selection(TextSelection::new(run_root, ws, we));
+                                    if let Some((root, ws, we)) = text_range_at_point(
+                                        dom,
+                                        &mut handle.text_renderer,
+                                        hit.node_id,
+                                        mx,
+                                        my,
+                                        false,
+                                    ) {
+                                        dom.set_selection(TextSelection::new(root, ws, we));
+                                    }
                                 }
                                 3 => {
-                                    // Select entire text node (line-level)
-                                    if let Some((run, entry)) = dom.find_run_entry_for_node(nid) {
-                                        dom.set_selection(TextSelection::new(
-                                            run.root_id,
-                                            entry.flat_start,
-                                            entry.flat_start + entry.grapheme_count,
-                                        ));
+                                    if let Some((root, ls, le)) = text_range_at_point(
+                                        dom,
+                                        &mut handle.text_renderer,
+                                        hit.node_id,
+                                        mx,
+                                        my,
+                                        true,
+                                    ) {
+                                        dom.set_selection(TextSelection::new(root, ls, le));
                                     }
                                 }
                                 4 => {
@@ -823,6 +847,21 @@ pub fn handle_mouse_input(
             if let Some(active) = dom.hit_state.active_node
                 && dom.hit_state.is_hovered(active)
             {
+                if mouse_button == crate::interactivity::MouseButton::Left
+                    && let Some(target) = js_target
+                    && let Some(node) = dom.nodes.get_mut(target)
+                    && let Some(checked) = node.as_checkbox_input_mut()
+                {
+                    *checked = !*checked;
+                    let value = checkbox_value_string(*checked);
+                    events.push(AppEvent::Input(InputEventData {
+                        window_id: wid,
+                        node_id: target,
+                        value: value.clone(),
+                        input_type: "toggle".to_string(),
+                        data: Some(value),
+                    }));
+                }
                 dom.dispatch_click(mx, my, mouse_button);
                 if let Some(target) = js_target {
                     events.push(AppEvent::Click(MouseEventData {
@@ -966,6 +1005,49 @@ pub fn handle_key_for_input(
     }
 
     (needs_redraw, events)
+}
+
+pub fn handle_key_for_checkbox(
+    dom: &mut UIState,
+    wid: u32,
+    key_event: &winit::event::KeyEvent,
+) -> (bool, Vec<AppEvent>) {
+    use winit::event::ElementState;
+
+    if key_event.state != ElementState::Pressed {
+        return (false, Vec::new());
+    }
+
+    let should_toggle = matches!(
+        &key_event.logical_key,
+        Key::Named(NamedKey::Space) | Key::Named(NamedKey::Enter)
+    );
+    if !should_toggle {
+        return (false, Vec::new());
+    }
+
+    let Some(focused_id) = dom.focused_node else {
+        return (false, Vec::new());
+    };
+    let Some(node) = dom.nodes.get_mut(focused_id) else {
+        return (false, Vec::new());
+    };
+    let Some(checked) = node.as_checkbox_input_mut() else {
+        return (false, Vec::new());
+    };
+
+    *checked = !*checked;
+    let value = checkbox_value_string(*checked);
+    (
+        true,
+        vec![AppEvent::Input(InputEventData {
+            window_id: wid,
+            node_id: focused_id,
+            value: value.clone(),
+            input_type: "toggle".to_string(),
+            data: Some(value),
+        })],
+    )
 }
 
 /// Handle keyboard shortcuts for view text selection (Shift+Arrows, Ctrl+A, etc.)
